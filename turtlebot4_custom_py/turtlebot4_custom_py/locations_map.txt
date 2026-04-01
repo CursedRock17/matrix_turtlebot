@@ -1,0 +1,3 @@
+Harold's Room: 0.0, 1.0, NORTH
+John's Room: -1.0, 3.0, NORTH
+dock: 0.0, 0.0, NORTH

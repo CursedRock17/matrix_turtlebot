@@ -1,0 +1,3 @@
+[submodule "turtlebot4_simulator"]
+	path = turtlebot4_simulator
+	url = https://github.com/turtlebot/turtlebot4_simulator

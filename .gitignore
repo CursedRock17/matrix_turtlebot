@@ -39,3 +39,6 @@
 
 # debug information files
 *.dwo
+
+# Virtual Environment
+turtlebot4_venv

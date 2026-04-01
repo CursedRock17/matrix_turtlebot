@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>turtlebot4_bringup</name>
+  <version>2.0.1</version>
+  <description>Turtlebot4 Robot Bringup</description>
+  <maintainer email="civerachb@clearpathrobotics.com">Chris Iverach-Brereton</maintainer>
+  <maintainer email="hluo@clearpathrobotics.com">Hilary Luo</maintainer>
+
+  <license>Apache 2.0</license>
+
+  <author email="rkreinin@clearpathrobotics.com">Roni Kreinin</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>turtlebot4_node</depend>
+  <depend>turtlebot4_description</depend>
+  <depend>turtlebot4_diagnostics</depend>
+  <depend>rplidar_ros</depend>
+  <depend>depthai_bridge</depend>
+  <depend>depthai_examples</depend>
+  <depend>depthai_ros_driver</depend>
+  <depend>depthai_ros_msgs</depend>
+  <depend>joy_linux</depend>
+  <depend>nav2_common</depend>
+  <depend version_gte="2.6.1">teleop_twist_joy</depend> <!-- TwistStamped support needed -->
+  <depend>tf2_ros</depend>
+  <depend>create3_republisher</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
