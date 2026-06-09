@@ -23,14 +23,13 @@ def main():
 
     print("Set Initial")
     # Wait for Nav2
-    navigator.waitUntilNav2Active(
-        #navigator=(robo_namespace + '/' + 'bt_navigator'),
-        #localizer=(robo_namespace + '/' + 'amcl'),
-    )
+    navigator.waitUntilNav2Active()
+    #navigator=(robo_namespace + '/' + 'bt_navigator'),
+    #localizer=(robo_namespace + '/' + 'amcl'),
 
     print("Nav Ready")
     # Set goal poses
-    goal_pose = navigator.getPoseStamped([1.0, 2.0], TurtleBot4Directions.EAST)
+    goal_pose = navigator.getPoseStamped([1.50, -0.75], TurtleBot4Directions.EAST)
 
     print("Running")
     # Undock

@@ -42,3 +42,13 @@
 
 # Virtual Environment
 turtlebot4_venv
+
+# ROS 2 Toolchain
+build/*
+log/*
+install/*
+llama.cpp
+
+# Frames Info
+frames_*
+bags/*

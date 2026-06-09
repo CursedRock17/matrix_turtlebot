@@ -56,3 +56,5 @@ ROS_DOMAIN_ID=5
 ### "PS4" Controller
 MAC Address: A0:5A:5C:E5:66:A1
 
+### Resources
+https://classes.cs.uchicago.edu/archive/2025/fall/20600-1/turtlebot4_assembly_setup.html
