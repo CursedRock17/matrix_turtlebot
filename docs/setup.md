@@ -36,6 +36,10 @@ grab off your computers `ipconfig` or an app like `Fing`. Sign in with the given
 user/pass which you created when flashing the SD. You then want to run `turtlebot4-setup` and
 configure the network to the network you'll be using. 
 
+For the full RPi configuration (discovery server, domain ID, namespace, time sync) follow
+[raspberry_pi_setup.md](./raspberry_pi_setup.md). Time sync in particular is required —
+see [time_sync.md](./time_sync.md) for why and how.
+
 
 ## Configuration Settings for each of the Turtlebots
 
