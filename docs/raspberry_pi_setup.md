@@ -21,8 +21,14 @@ and run `turtlebot4-setup`. Configure:
 
 The laptop side of this config lives in `turtlebot4_bringup/setup.bash`
 (`RMW_IMPLEMENTATION=rmw_fastrtps_cpp`, `ROS_DOMAIN_ID=5`,
-`ROS_DISCOVERY_SERVER="192.168.50.223:11811;"`, `ROS_SUPER_CLIENT=True`) —
-source it in every terminal that talks to the robot.
+`ROS_DISCOVERY_SERVER="192.168.50.223:11811;127.0.0.1:11888;"`,
+`ROS_SUPER_CLIENT=True` in interactive shells) — source it in every terminal
+that talks to the robot. Sourcing it also auto-starts a **second, local
+discovery server** on the laptop (`fastdds discovery -i 1 -l 127.0.0.1 -p 11888`).
+The local server lets laptop-side nodes (nav2, RViz, scripts) discover each
+other without a Wi-Fi round trip to the Pi; without it, bt_navigator hangs
+forever while activating (see
+[navigate_to_a_goal.md](./navigate_to_a_goal.md)).
 
 ## 2) Time sync
 Required, not optional — an unsynced clock silently breaks TF and navigation.
@@ -53,3 +59,12 @@ After a fresh boot of the robot, from a sourced laptop terminal:
   discovery server. Use the composed launch
   (`ros2 launch turtlebot4_bringup nav2.launch.py`) — see
   [navigate_to_a_goal.md](./navigate_to_a_goal.md).
+- **nav2 stalls forever at `Activating bt_navigator`** (never prints `Managed
+  nodes are active`): the local discovery server on the laptop isn't running,
+  so bt_navigator's behavior-tree clients wait on the Pi to match them over
+  Wi-Fi. Check `ss -lun | grep 11888`, re-source
+  `turtlebot4_bringup/setup.bash`, and relaunch nav2.
+- **The lidar is off while the robot is docked** — that's a Turtlebot4
+  feature, not a fault. No `/scan` means AMCL can't confirm a pose, so any
+  script must undock *before* calling `waitUntilNav2Active()`
+  (`nav_to_node` does this).

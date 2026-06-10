@@ -11,6 +11,8 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState
 from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Directions, TurtleBot4Navigator
 
+from turtlebot4_custom_py.startup import undock_and_localize
+
 BATTERY_HIGH = 0.95
 BATTERY_LOW = 0.30  # when the robot will go charge
 BATTERY_CRITICAL = 0.1  # when the robot will shutdown
@@ -23,10 +25,10 @@ class BatteryMonitor(Node):
 
         self.lock = lock
 
-        # Subscribe to the /battery_state topic
+        # Subscribe to the /battery_state topic (robot publishes at root namespace)
         self.battery_state_subscriber = self.create_subscription(
             BatteryState,
-            ('matrix_turtlebot1/' + 'battery_state'),
+            'battery_state',
             self.battery_state_callback,
             qos_profile_sensor_data)
 
@@ -47,8 +49,8 @@ def main(args=None):
     lock = Lock()
     battery_monitor = BatteryMonitor(lock)
 
-    robo_namespace = "/matrix_turtlebot1"
-    navigator = TurtleBot4Navigator(namespace=robo_namespace)
+    # The robot publishes at the root namespace (see docs/raspberry_pi_setup.md)
+    navigator = TurtleBot4Navigator()
 
     battery_percent = None
     position_index = 0
@@ -56,28 +58,9 @@ def main(args=None):
     thread = Thread(target=battery_monitor.thread_function, daemon=True)
     thread.start()
 
-    # Start on dock
-    if not navigator.getDockedStatus():
-        print("Docking")
-        navigator.info('Docking before intialising pose')
-        navigator.dock()
-
-    # Create a list of destinations : Format dict "name", x, y, direction
-    destinations = {
-        'dock': [[0.0, 0.0], TurtleBot4Directions.NORTH],
-    }
-
-    # Set initial pose
-    initial_pose = navigator.getPoseStamped(destinations['dock'][0], destinations['dock'][1])
-    navigator.setInitialPose(initial_pose)
-    print("Set initial pose")
-
-    # Wait for Nav2
-    navigator.waitUntilNav2Active()
+    # Undock first (the docked robot has no lidar), localize, wait for Nav2
+    undock_and_localize(navigator)
     print("Ready")
-
-    # Undock
-    navigator.undock()
 
     # Prepare goal poses
     goal_pose = []

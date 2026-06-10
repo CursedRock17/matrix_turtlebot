@@ -6,6 +6,17 @@ from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Directions
 # Default GGUF model filename expected in this directory
 DEFAULT_MODEL_FILENAME = "Llama-3.2-3B-Instruct-Q4_K_M.gguf"
 
+# The model and locations file live only in the source tree (the model is
+# ~2GB and setup.py doesn't install either into the colcon install space),
+# so fall back to the source checkout when running as an installed package.
+SOURCE_DIR = "/home/ros/Documents/matrix_turtlebot/turtlebot4_custom_py/turtlebot4_custom_py"
+
+
+def _resolve_default(filename: str) -> str:
+    """Find a data file next to this module, or in the source tree."""
+    local = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+    return local if os.path.isfile(local) else os.path.join(SOURCE_DIR, filename)
+
 
 class LLMLocationMapper:
     """
@@ -27,18 +38,16 @@ class LLMLocationMapper:
         """
         print("Initializing LLM Location Mapper...")
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-
         # Load locations from file
         if locations_file is None:
-            locations_file = os.path.join("/home/cursedrock17/Documents/Electrical/Matrix_Lab/turtlebot4_ws/turtlebot4_custom_py/turtlebot4_custom_py", "locations_map.txt")
+            locations_file = _resolve_default("locations_map.txt")
 
         self.locations = self._load_locations(locations_file)
         print(f"Loaded {len(self.locations)} locations from {locations_file}")
 
         # Resolve model path
         if model_path is None:
-            model_path = os.path.join("/home/cursedrock17/Documents/Electrical/Matrix_Lab/turtlebot4_ws/models/", DEFAULT_MODEL_FILENAME)
+            model_path = _resolve_default(DEFAULT_MODEL_FILENAME)
 
         if not os.path.isfile(model_path):
             raise FileNotFoundError(
@@ -122,14 +131,24 @@ class LLMLocationMapper:
             "You are a robot navigation assistant. "
             "Extract the destination location from the user's command.\n\n"
             f"Available locations:\n{locations_list}\n\n"
-            "Respond with ONLY the exact location name from the list above. "
-            "If no location is mentioned or unclear, respond with \"UNKNOWN\"."
+            "Rules:\n"
+            "- Respond with ONLY the exact location name from the list above.\n"
+            "- If the command mentions a person (e.g. bringing or delivering "
+            "something to them, or visiting them), respond with that person's "
+            "room from the list.\n"
+            "- Commands about charging, recharging, going home, or returning "
+            "to base mean the dock.\n"
+            "- If no destination can be inferred, respond with \"UNKNOWN\"."
         )
 
-        return [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": command},
-        ]
+        messages = [{"role": "system", "content": system_msg}]
+        # Small models follow examples better than rules: anchor the
+        # charging-synonym behavior with a one-shot exchange.
+        if "dock" in self.locations:
+            messages.append({"role": "user", "content": "Go recharge yourself"})
+            messages.append({"role": "assistant", "content": "dock"})
+        messages.append({"role": "user", "content": command})
+        return messages
 
     def extract_location(self, command: str) -> Optional[Tuple[float, float, object]]:
         """

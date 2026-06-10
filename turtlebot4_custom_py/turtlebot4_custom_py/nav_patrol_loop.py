@@ -13,6 +13,8 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState
 from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Directions, TurtleBot4Navigator
 
+from turtlebot4_custom_py.startup import undock_and_localize
+
 BATTERY_HIGH = 0.95
 BATTERY_LOW = 0.30  # when the robot will go charge
 BATTERY_CRITICAL = 0.1  # when the robot will shutdown
@@ -49,7 +51,6 @@ def main(args=None):
     lock = Lock()
     battery_monitor = BatteryMonitor(lock)
 
-    robo_namespace = "/matrix_turtlebot1"
     navigator = TurtleBot4Navigator()
     print("Navigator Made")
 
@@ -59,24 +60,8 @@ def main(args=None):
     thread = Thread(target=battery_monitor.thread_function, daemon=True)
     thread.start()
 
-    # Start on dock
-    if not navigator.getDockedStatus():
-        print("Docking")
-        navigator.info('Docking before intialising pose')
-        navigator.dock()
-
-    # Set initial pose
-    initial_pose = navigator.getPoseStamped([0.0, 0.0], TurtleBot4Directions.NORTH)
-    navigator.setInitialPose(initial_pose)
-    print("Set initial pose")
-
-    # Wait for Nav2
-    navigator.waitUntilNav2Active()
-    print("Nav Ready")
-
-    # Undock
-    navigator.undock()
-
+    # Undock first (the docked robot has no lidar), localize, wait for Nav2
+    undock_and_localize(navigator)
     print("Running")
     # Prepare goal poses
     goal_pose = []

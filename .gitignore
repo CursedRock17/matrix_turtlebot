@@ -52,3 +52,10 @@ llama.cpp
 # Frames Info
 frames_*
 bags/*
+
+# Claude Stuff
+TODO.md
+claude_logs/
+
+# llama.cpp
+*.gguf
