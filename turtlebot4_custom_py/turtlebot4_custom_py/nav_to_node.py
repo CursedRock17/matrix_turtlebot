@@ -6,7 +6,7 @@ from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Directions, Tur
 
 from turtlebot4_custom_py.startup import undock_and_localize
 
-GOAL_POSITION = [1.50, -0.75]
+GOAL_POSITION = [-0.5, 0.35]
 GOAL_DIRECTION = TurtleBot4Directions.EAST
 
 
@@ -18,7 +18,11 @@ def main():
 
     undock_and_localize(navigator)
 
+    print("We've Undocked")
     goal_pose = navigator.getPoseStamped(GOAL_POSITION, GOAL_DIRECTION)
+    
+    print("Goal Pose: ", goal_pose)
     navigator.startToPose(goal_pose)
 
+    print("Going to Goal")
     rclpy.shutdown()

@@ -13,11 +13,11 @@
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetParameter
 
 ARGUMENTS = [
     DeclareLaunchArgument(
@@ -44,17 +44,28 @@ def generate_launch_description():
         output='screen',
     )
 
-    navigation = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            PathJoinSubstitution(
-                [pkg_nav2_bringup, 'launch', 'navigation_launch.py'])),
-        launch_arguments={
-            'params_file': LaunchConfiguration('params_file'),
-            'use_sim_time': LaunchConfiguration('use_sim_time'),
-            'use_composition': 'True',
-            'container_name': 'nav2_container',
-        }.items()
-    )
+    # Bond liveness watchdogs are disabled below: bond formation goes through
+    # the Fast DDS discovery servers and repeatedly failed to form for
+    # collision_monitor within the 4 s default, aborting or wedging bringup
+    # (2026-06-10 field test). SetParameter is used because the lifecycle
+    # manager component never receives the params_file — the container drops
+    # global arguments for composed nodes and navigation_launch.py only passes
+    # it autostart/node_names. Lifecycle transitions still run without bonds.
+    navigation = GroupAction([
+        SetParameter('bond_timeout', 0.0),
+        SetParameter('bond_heartbeat_period', 0.0),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution(
+                    [pkg_nav2_bringup, 'launch', 'navigation_launch.py'])),
+            launch_arguments={
+                'params_file': LaunchConfiguration('params_file'),
+                'use_sim_time': LaunchConfiguration('use_sim_time'),
+                'use_composition': 'True',
+                'container_name': 'nav2_container',
+            }.items()
+        ),
+    ])
 
     ld = LaunchDescription(ARGUMENTS)
     ld.add_action(container)
