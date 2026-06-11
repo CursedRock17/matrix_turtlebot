@@ -38,7 +38,10 @@ class YoloDetectionNode(Node):
 
     def __init__(self):
         super().__init__('yolo_detection')
-        self.declare_parameter('image_topic', '/oakd/rgb/preview/image_raw')
+        # Relative (no leading /) so a namespaced run (-r __ns:=/<robot>)
+        # follows that robot's camera; at the root namespace it still
+        # resolves to /oakd/rgb/preview/image_raw.
+        self.declare_parameter('image_topic', 'oakd/rgb/preview/image_raw')
         self.declare_parameter('webcam', -1)
         self.declare_parameter('model', 'models/yolo26n.pt')
         self.declare_parameter('conf', 0.4)

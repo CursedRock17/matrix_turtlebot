@@ -14,9 +14,11 @@ and run `turtlebot4-setup`. Configure:
   `turtlebot4_bringup/setup.bash`).
 - **ROS Setup -> Bash Setup**:
   - `ROS_DOMAIN_ID`: `5`
-  - `ROBOT_NAMESPACE`: leave **empty**. All our docs, configs, and the custom
-    nodes assume the robot publishes `/scan`, `/odom`, etc. at the root
-    namespace.
+  - `ROBOT_NAMESPACE`: leave **empty** for the single-robot setup — the docs
+    assume the robot publishes `/scan`, `/odom`, etc. at the root namespace.
+    The custom nodes and launches do support a namespace (for multi-robot):
+    set it here, then pass the same value as `namespace:=<ns>` to every
+    launch and as `--ros-args -r __ns:=/<ns>` to every `ros2 run` node.
 - Apply settings; the RPi will restart its services.
 
 The laptop side of this config lives in `turtlebot4_bringup/setup.bash`

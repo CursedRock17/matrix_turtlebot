@@ -1,0 +1,47 @@
+# turtlebot4_custom_py
+
+The lab's Python examples for the TurtleBot4. Each node is one self-contained
+example; the libraries at the bottom hold the startup and map logic they share.
+
+## What's in here
+
+| File | What it does |
+|------|--------------|
+| `nav_to_node.py` | Undocks, localizes from the map's known dock pose, and drives to a single hardcoded goal — the smallest end-to-end navigation example. |
+| `nav_patrol_loop.py` | Patrols the active map's waypoint list forever, docking itself to recharge when the battery runs low. |
+| `command_control.py` | Same patrol-and-recharge loop as `nav_patrol_loop`, but with waypoints hardcoded in the file instead of read from the map's locations file. |
+| `llm_navigation_node.py` | Listens for natural-language commands on a topic and uses a local LLM to turn them into navigation goals. |
+| `patrol_with_llm_node.py` | Patrols like `nav_patrol_loop`, but accepts LLM reroute commands mid-patrol and then resumes. |
+| `yolo_detection_node.py` | Runs a YOLO model on the camera stream (or a webcam) and publishes the detections, plus annotated frames for RViz. |
+| `frontier_exploration.py` | Frontier-based autonomous exploration of an unknown map — work in progress, no entry point in `setup.py` yet. |
+| `llm_location_mapper.py` | Library: prompts a local GGUF LLM to extract a known location from a sentence; also runnable standalone (`location_mapper`) to test the LLM without a robot. |
+| `map_locations.py` | Library: loads the surveyed dock poses and named locations for whatever map the running `map_server` has loaded (`maps/<name>.locations.yaml`). |
+| `startup.py` | Library: the shared dock → undock → localize → wait-for-Nav2 sequence every navigation example starts with. |
+| `locations_map.txt` | The name → pose list the LLM location mapper chooses from. |
+
+Every node runs as `ros2 run turtlebot4_custom_py <entry point>`. Entry points
+match the file names except `llm_navigation_node.py` → `llm_navigation`,
+`patrol_with_llm_node.py` → `patrol_with_llm`,
+`yolo_detection_node.py` → `yolo_detection`, and
+`llm_location_mapper.py` → `location_mapper` (full list in `setup.py`).
+
+## Where to start: crawl, walk, run
+
+Every example assumes the robot stack is already up: a generated map with a
+locations file beside it, the robot on its dock, and the laptop-side launch
+running — follow [docs/navigate_to_a_goal.md](../docs/navigate_to_a_goal.md)
+first. Then work through the examples in order; each one adds a single new
+idea on top of the last, so when something breaks you know which layer broke.
+
+- **Crawl — `nav_to_node`.** One trip: undock, localize, drive to a goal.
+  If this works, your bringup, time sync, discovery, and map locations file
+  are all good. Nothing later works until this does.
+- **Walk — `nav_patrol_loop`.** The same startup, now in a loop with battery
+  management: patrol the map's waypoints, dock to charge, resume.
+- **Run — `llm_navigation`.** Natural language in, navigation goals out.
+  Try `location_mapper` by itself first to test the LLM with no robot at all
+  (see [LLM_NAVIGATION_README.md](./LLM_NAVIGATION_README.md)).
+- **Integrate.** `patrol_with_llm` composes the patrol loop with LLM
+  rerouting; `yolo_detection` adds perception alongside whatever is driving
+  (see [docs/object_detection.md](../docs/object_detection.md)). New research
+  builds at this layer, out of the pieces you just proved one by one.

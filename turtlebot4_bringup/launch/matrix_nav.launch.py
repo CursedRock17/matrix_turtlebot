@@ -41,6 +41,9 @@ ARGUMENTS = [
     DeclareLaunchArgument('use_sim_time', default_value='false',
                           choices=['true', 'false'],
                           description='Use sim time'),
+    DeclareLaunchArgument('namespace', default_value='',
+                          description='Robot namespace (no leading /), '
+                                      'empty for the single-robot default'),
 ]
 
 
@@ -49,19 +52,24 @@ def generate_launch_description():
     pkg_turtlebot4_navigation = get_package_share_directory('turtlebot4_navigation')
     pkg_turtlebot4_bringup = get_package_share_directory('turtlebot4_bringup')
     use_sim_time = LaunchConfiguration('use_sim_time')
+    namespace = LaunchConfiguration('namespace')
 
     rviz = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
                 [pkg_turtlebot4_viz, 'launch', 'view_navigation.launch.py'])),
         condition=IfCondition(LaunchConfiguration('use_rviz')),
-        launch_arguments={'use_sim_time': use_sim_time}.items())
+        launch_arguments={
+            'namespace': namespace,
+            'use_sim_time': use_sim_time,
+        }.items())
 
     localization = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
                 [pkg_turtlebot4_navigation, 'launch', 'localization.launch.py'])),
         launch_arguments={
+            'namespace': namespace,
             'map': LaunchConfiguration('map'),
             'params': LaunchConfiguration('localization_params'),
             'use_sim_time': use_sim_time,
@@ -72,6 +80,7 @@ def generate_launch_description():
             PathJoinSubstitution(
                 [pkg_turtlebot4_bringup, 'launch', 'nav2.launch.py'])),
         launch_arguments={
+            'namespace': namespace,
             'params_file': LaunchConfiguration('nav2_params'),
             'use_sim_time': use_sim_time,
         }.items())

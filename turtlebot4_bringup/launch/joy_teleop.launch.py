@@ -27,7 +27,10 @@ from nav2_common.launch import RewrittenYaml
 
 ARGUMENTS = [
     DeclareLaunchArgument('joy_device', default_value='/dev/input/js0',
-                          description='Linux joy input device')
+                          description='Linux joy input device'),
+    DeclareLaunchArgument('namespace', default_value='',
+                          description='Robot namespace (no leading /), '
+                                      'empty for the single-robot default'),
 ]
 
 
@@ -49,9 +52,12 @@ def generate_launch_description():
         param_rewrites={},
         convert_types=True)
 
+    # Both nodes run inside the namespace so the RewrittenYaml root key
+    # matches them and cmd_vel reaches the namespaced robot.
     joy_node = Node(
         package='joy_linux',
         executable='joy_linux_node',
+        namespace=namespace,
         parameters=[{
             'dev': LaunchConfiguration('joy_device')
         }],
@@ -63,6 +69,7 @@ def generate_launch_description():
         package='teleop_twist_joy',
         executable='teleop_node',
         name='teleop_twist_joy_node',
+        namespace=namespace,
         parameters=[
             controller_config,
             {'publish_stamped_twist': True}  # Stamped messages are required for Jazzy

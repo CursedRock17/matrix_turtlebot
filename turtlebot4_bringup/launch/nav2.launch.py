@@ -6,9 +6,9 @@
 # localization lifecycle manager to tear everything down. Running nav2 in a
 # single component container avoids the discovery storm.
 #
-# Note: the scan topics in nav2.config.yaml are absolute (/scan) instead of
-# the SetRemap trick the turtlebot4_navigation wrapper uses, so no remaps
-# are needed here. This assumes the robot publishes at the root namespace.
+# Note: the scan topics in nav2.config.yaml are relative (scan), so they
+# resolve under whatever namespace nav2 runs in — /scan at the root (the
+# single-robot default), /<namespace>/scan when namespace:= is passed.
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -30,6 +30,9 @@ ARGUMENTS = [
     DeclareLaunchArgument('use_sim_time', default_value='false',
                           choices=['true', 'false'],
                           description='Use sim time'),
+    DeclareLaunchArgument('namespace', default_value='',
+                          description='Robot namespace (no leading /), '
+                                      'empty for the single-robot default'),
 ]
 
 
@@ -40,6 +43,7 @@ def generate_launch_description():
         package='rclcpp_components',
         executable='component_container_isolated',
         name='nav2_container',
+        namespace=LaunchConfiguration('namespace'),
         parameters=[LaunchConfiguration('params_file')],
         output='screen',
     )
@@ -59,6 +63,7 @@ def generate_launch_description():
                 PathJoinSubstitution(
                     [pkg_nav2_bringup, 'launch', 'navigation_launch.py'])),
             launch_arguments={
+                'namespace': LaunchConfiguration('namespace'),
                 'params_file': LaunchConfiguration('params_file'),
                 'use_sim_time': LaunchConfiguration('use_sim_time'),
                 'use_composition': 'True',

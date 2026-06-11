@@ -34,11 +34,9 @@ class PatrolWithLLMNode(Node):
         # Declare parameters
         self.declare_parameter('model_path', '')
         self.declare_parameter('n_threads', 4)
-        self.declare_parameter('robot_namespace', '')
 
         model_path = self.get_parameter('model_path').value or None
         n_threads = self.get_parameter('n_threads').value
-        robot_namespace = self.get_parameter('robot_namespace').value
 
         # Thread-safe command queue
         self.command_queue = collections.deque()

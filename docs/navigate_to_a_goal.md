@@ -6,7 +6,9 @@ This tutorial assumes you've gone ahead and generate a map with SLAM, we now wan
 localization
 
 Note: the robot publishes its topics (`/scan`, `/odom`, etc.) at the root namespace,
-so no `namespace:=` argument is passed to any of the launches below.
+so no `namespace:=` argument is passed to any of the launches below. For a robot
+configured with a namespace, pass `namespace:=<ns>` to the launch in step 2 and
+run the node in step 3 with `--ros-args -r __ns:=/<ns>`.
 
 The robot should start **on its dock** — `nav_to_node` uses the dock as its known
 starting pose.

@@ -208,8 +208,8 @@ class LLMLocationMapper:
         return self.locations.copy()
 
 
-# Example usage and testing
-if __name__ == '__main__':
+# Example usage and testing (the `location_mapper` entry point in setup.py)
+def main():
     # Initialize mapper
     mapper = LLMLocationMapper()
 
@@ -234,3 +234,7 @@ if __name__ == '__main__':
         else:
             print("✗ No location found")
         print("-"*60)
+
+
+if __name__ == '__main__':
+    main()

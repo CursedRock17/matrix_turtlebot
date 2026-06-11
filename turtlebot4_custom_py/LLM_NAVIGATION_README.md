@@ -90,9 +90,15 @@ You can customize the node with parameters:
 ```bash
 ros2 run turtlebot4_custom_py llm_navigation \
   --ros-args \
-  -p robot_namespace:=/matrix_turtlebot1 \
   -p model_name:=meta-llama/Meta-Llama-3.1-8B-Instruct \
   -p command_topic:=navigation_command
+```
+
+For a namespaced robot, namespace the whole node with the standard remap
+(this moves the navigator *and* the command topic together):
+
+```bash
+ros2 run turtlebot4_custom_py llm_navigation --ros-args -r __ns:=/matrix_turtlebot1
 ```
 
 ## Adding New Locations

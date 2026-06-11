@@ -17,24 +17,24 @@ class LLMNavigationNode(Node):
         super().__init__('llm_navigation_node')
 
         # Declare parameters
-        self.declare_parameter('robot_namespace', '')
         self.declare_parameter('model_path', '')
         self.declare_parameter('command_topic', 'navigation_command')
         self.declare_parameter('n_threads', 4)
 
         # Get parameters
-        robot_namespace = self.get_parameter('robot_namespace').value
         model_path = self.get_parameter('model_path').value or None
         command_topic = self.get_parameter('command_topic').value
         n_threads = self.get_parameter('n_threads').value
 
         self.get_logger().info(f'Initializing LLM Navigation Node')
-        self.get_logger().info(f'Robot namespace: {robot_namespace}')
         self.get_logger().info(f'Model path: {model_path or "default"}')
 
-        # Initialize the TurtleBot4 navigator
+        # Initialize the TurtleBot4 navigator. For a namespaced robot run
+        # with --ros-args -r __ns:=/<robot>, which namespaces this node, the
+        # navigator, and the command topic together (a robot_namespace
+        # parameter would only move the navigator, not this node's topics).
         self.get_logger().info('Initializing TurtleBot4 Navigator...')
-        self.navigator = TurtleBot4Navigator(namespace=robot_namespace)
+        self.navigator = TurtleBot4Navigator()
 
         # Initialize the LLM location mapper
         self.get_logger().info('Initializing LLM Location Mapper...')
