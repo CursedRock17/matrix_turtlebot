@@ -4,7 +4,8 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Navigator
 
-from turtlebot4_custom_py.llm_location_mapper import LLMLocationMapper
+from turtlebot4_custom_py.llm_location_mapper import LLMLocationMapper, locations_from_map
+from turtlebot4_custom_py.map_locations import load_map_locations
 
 
 class LLMNavigationNode(Node):
@@ -36,10 +37,17 @@ class LLMNavigationNode(Node):
         self.get_logger().info('Initializing TurtleBot4 Navigator...')
         self.navigator = TurtleBot4Navigator()
 
+        # The LLM picks from the active map's surveyed location names, so the
+        # localization launch (which runs map_server) must already be up —
+        # the same prerequisite navigation itself has.
+        locations = load_map_locations(self.navigator)
+        self.get_logger().info(f'Using locations from map: {locations.map_yaml}')
+
         # Initialize the LLM location mapper
         self.get_logger().info('Initializing LLM Location Mapper...')
         self.llm_mapper = LLMLocationMapper(
             model_path=model_path,
+            locations=locations_from_map(locations),
             n_threads=n_threads,
         )
 

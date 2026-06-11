@@ -18,6 +18,21 @@ def _resolve_default(filename: str) -> str:
     return local if os.path.isfile(local) else os.path.join(SOURCE_DIR, filename)
 
 
+def locations_from_map(map_locations) -> Dict[str, Tuple[float, float, float]]:
+    """Build the LLM's location dict from a MapLocations (map_locations.py).
+
+    This is what the nav nodes should pass as `locations=`, so the names the
+    LLM chooses from are exactly the surveyed names of the active map instead
+    of the static locations_map.txt. The dock approach pose is added under
+    the name 'dock' because the prompt maps charging synonyms onto it.
+    """
+    locations = {name: (position[0], position[1], degrees)
+                 for name, (position, degrees) in map_locations.locations.items()}
+    (x, y), degrees = map_locations.dock_approach_pose
+    locations.setdefault('dock', (x, y, degrees))
+    return locations
+
+
 class LLMLocationMapper:
     """
     Uses a local GGUF model (via llama.cpp) to map natural language commands
@@ -26,6 +41,7 @@ class LLMLocationMapper:
 
     def __init__(self, model_path: str = None,
                  locations_file: str = None,
+                 locations: Dict[str, Tuple[float, float, object]] = None,
                  n_threads: int = 4):
         """
         Initialize the LLM location mapper.
@@ -34,16 +50,22 @@ class LLMLocationMapper:
             model_path: Path to a GGUF model file. Defaults to
                         Llama-3.2-3B-Instruct-Q4_K_M.gguf in this directory.
             locations_file: Path to the locations_map.txt file
+            locations: Location dict {name: (x, y, direction)} that overrides
+                       the file. The nav nodes pass locations_from_map() here
+                       so the LLM picks from the active map's surveyed names;
+                       the file is the no-robot fallback for desk testing.
             n_threads: Number of CPU threads for inference
         """
         print("Initializing LLM Location Mapper...")
 
-        # Load locations from file
-        if locations_file is None:
-            locations_file = _resolve_default("locations_map.txt")
-
-        self.locations = self._load_locations(locations_file)
-        print(f"Loaded {len(self.locations)} locations from {locations_file}")
+        if locations is not None:
+            self.locations = dict(locations)
+            print(f"Using {len(self.locations)} locations from the active map")
+        else:
+            if locations_file is None:
+                locations_file = _resolve_default("locations_map.txt")
+            self.locations = self._load_locations(locations_file)
+            print(f"Loaded {len(self.locations)} locations from {locations_file}")
 
         # Resolve model path
         if model_path is None:
@@ -101,8 +123,15 @@ class LLMLocationMapper:
 
         return locations
 
-    def _get_direction_enum(self, direction_str: str):
-        """Convert direction string to TurtleBot4Directions enum."""
+    def _get_direction_enum(self, direction_str):
+        """Convert direction string to TurtleBot4Directions enum.
+
+        Locations loaded from a map's locations file already carry yaw in
+        degrees (see map_locations.py) — those pass straight through, since
+        getPoseStamped() accepts degrees as well as the enum.
+        """
+        if isinstance(direction_str, (int, float)):
+            return float(direction_str)
         direction_map = {
             'NORTH': TurtleBot4Directions.NORTH,
             'SOUTH': TurtleBot4Directions.SOUTH,
@@ -150,15 +179,18 @@ class LLMLocationMapper:
         messages.append({"role": "user", "content": command})
         return messages
 
-    def extract_location(self, command: str) -> Optional[Tuple[float, float, object]]:
+    def extract_location_name(self, command: str) -> Optional[str]:
         """
-        Extract location from natural language command using LLM.
+        Extract a known location NAME from a natural language command.
+
+        This is the LLM call plus the fuzzy match, without the coordinate
+        lookup — location_mapper_eval scores this directly.
 
         Args:
             command: Natural language command (e.g., "Bring Harold this book")
 
         Returns:
-            Tuple of (x, y, direction_enum) or None if location not found
+            The canonical location name, or None if nothing matched
         """
         print(f"\nProcessing command: '{command}'")
 
@@ -177,15 +209,30 @@ class LLMLocationMapper:
         print(f"LLM extracted location: '{location_text}'")
 
         # Match against known locations (case-insensitive)
-        for loc_name, (x, y, direction_str) in self.locations.items():
+        for loc_name in self.locations:
             if loc_name.lower() in location_text.lower() or \
                location_text.lower() in loc_name.lower():
-                direction_enum = self._get_direction_enum(direction_str)
-                print(f"Matched to: {loc_name} at ({x}, {y}, {direction_str})")
-                return (x, y, direction_enum)
+                print(f"Matched to: {loc_name}")
+                return loc_name
 
         print("No matching location found")
         return None
+
+    def extract_location(self, command: str) -> Optional[Tuple[float, float, object]]:
+        """
+        Extract location from natural language command using LLM.
+
+        Args:
+            command: Natural language command (e.g., "Bring Harold this book")
+
+        Returns:
+            Tuple of (x, y, direction_enum) or None if location not found
+        """
+        loc_name = self.extract_location_name(command)
+        if loc_name is None:
+            return None
+        x, y, direction = self.locations[loc_name]
+        return (x, y, self._get_direction_enum(direction))
 
     def get_location_coords(self, location_name: str) -> Optional[Tuple[float, float, object]]:
         """

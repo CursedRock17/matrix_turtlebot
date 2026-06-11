@@ -1,11 +1,13 @@
 # Installation Setup Guide
-This mini-guide goes setting up and installing all the necessary software/firmware to get
-the Turtlebot4 platform to work should somebody stumble on this.
+This mini-guide goes over setting up and installing all the necessary software/firmware to get
+the Turtlebot4 platform to work should somebody stumble on this. Everything here happens on
+the robot's Raspberry Pi (or the SD card that goes into it) — the laptop side is covered in
+[raspberry_pi_setup.md](./raspberry_pi_setup.md) and [time_sync.md](./time_sync.md).
 
 You're mainly just following other people's guides, mainly [Clearpath's](https://turtlebot.github.io/turtlebot4-user-manual/setup/basic.html),  but this is useful if you're starting
 from nothing:
 1) Turn the Turtlebot4 off and make sure it's not on the charger, you need to disconnect the top from the base 
-to access the PI, as [shown](https://turtlebot.github.io/turtlebot4-user-manual/setup/basic.html). The SD card slot is on the side opposide of the big ports.
+to access the PI, as [shown](https://turtlebot.github.io/turtlebot4-user-manual/setup/basic.html). The SD card slot is on the side opposite of the big ports.
 If there's already an SD card sticking out, remove it, otherwise move on with a new one.
 2) Acquire a 32/64 GB Micro SD Card, install [Raspberry PI Imager](https://www.raspberrypi.com/software/), insert SD card into your computer.
 3) Select the Raspberry PI 4 option, you want to install Ubuntu on whatever the latest
@@ -38,7 +40,9 @@ configure the network to the network you'll be using.
 
 For the full RPi configuration (discovery server, domain ID, namespace, time sync) follow
 [raspberry_pi_setup.md](./raspberry_pi_setup.md). Time sync in particular is required —
-see [time_sync.md](./time_sync.md) for why and how.
+see [time_sync.md](./time_sync.md) for why and how, and verify it before the first drive:
+`chronyc sources` on the RPi (want `^*` next to the laptop's IP) and
+`ros2 topic delay /odom` on the laptop (want ~0.01–0.05 s).
 
 
 ## Configuration Settings for each of the Turtlebots

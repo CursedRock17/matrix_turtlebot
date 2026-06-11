@@ -11,10 +11,11 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Directions, TurtleBot4Navigator
+from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Navigator
 
 from turtlebot4_custom_py.nav_patrol_loop import BatteryMonitor
-from turtlebot4_custom_py.llm_location_mapper import LLMLocationMapper
+from turtlebot4_custom_py.llm_location_mapper import LLMLocationMapper, locations_from_map
+from turtlebot4_custom_py.map_locations import load_map_locations
 from turtlebot4_custom_py.startup import undock_and_localize
 
 BATTERY_HIGH = 0.95
@@ -28,7 +29,7 @@ class PatrolWithLLMNode(Node):
     via natural language commands on /navigation_command, then resumes patrol.
     """
 
-    def __init__(self):
+    def __init__(self, locations):
         super().__init__('patrol_with_llm_node')
 
         # Declare parameters
@@ -49,10 +50,12 @@ class PatrolWithLLMNode(Node):
             10
         )
 
-        # Initialize the LLM location mapper
+        # Initialize the LLM location mapper on the active map's surveyed
+        # names, so reroute commands can only target places this map knows.
         self.get_logger().info('Initializing LLM Location Mapper...')
         self.llm_mapper = LLMLocationMapper(
             model_path=model_path,
+            locations=locations_from_map(locations),
             n_threads=n_threads,
         )
 
@@ -73,8 +76,12 @@ def main(args=None):
     navigator = TurtleBot4Navigator()
     print("Navigator Made")
 
+    # Load the active map's locations up front (also validates the sidecar
+    # file before anything moves) — the LLM needs them at node construction.
+    locations = load_map_locations(navigator)
+
     # Create the patrol+LLM node and spin it in a background thread
-    patrol_node = PatrolWithLLMNode()
+    patrol_node = PatrolWithLLMNode(locations)
     patrol_executor = SingleThreadedExecutor()
     patrol_executor.add_node(patrol_node)
     patrol_thread = Thread(target=patrol_executor.spin, daemon=True)
@@ -90,11 +97,11 @@ def main(args=None):
     # Undock first (the docked robot has no lidar), localize, wait for Nav2
     undock_and_localize(navigator)
     print("Running")
-    # Prepare patrol waypoints
-    goal_pose = []
-    goal_pose.append(navigator.getPoseStamped([-0.30, 2.9], TurtleBot4Directions.NORTH_WEST))
-    goal_pose.append(navigator.getPoseStamped([0.57, 0.25], TurtleBot4Directions.EAST))
-    goal_pose.append(navigator.getPoseStamped([0.89, 0.97], TurtleBot4Directions.NORTH))
+    # Patrol waypoints come from the active map's locations file
+    goal_pose = locations.patrol_poses(navigator)
+    if not goal_pose:
+        navigator.error(f'No patrol list in {locations.map_yaml} locations file')
+        return
 
     while True:
         with lock:
@@ -110,8 +117,8 @@ def main(args=None):
             elif (battery_percent < BATTERY_LOW):
                 # Go near the dock
                 navigator.info('Docking for charge')
-                navigator.startToPose(navigator.getPoseStamped([-1.0, 1.0],
-                                      TurtleBot4Directions.EAST))
+                navigator.startToPose(
+                    navigator.getPoseStamped(*locations.dock_approach_pose))
                 navigator.dock()
 
                 if not navigator.getDockedStatus():

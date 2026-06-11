@@ -28,9 +28,12 @@ setup(
             'command_control = turtlebot4_custom_py.command_control:main',
             'nav_patrol_loop = turtlebot4_custom_py.nav_patrol_loop:main',
             'location_mapper = turtlebot4_custom_py.llm_location_mapper:main',
+            'location_mapper_eval = turtlebot4_custom_py.location_mapper_eval:main',
             'llm_navigation = turtlebot4_custom_py.llm_navigation_node:main',
             'patrol_with_llm = turtlebot4_custom_py.patrol_with_llm_node:main',
             'yolo_detection = turtlebot4_custom_py.yolo_detection_node:main',
+            'survey_locations = turtlebot4_custom_py.survey_locations:main',
+            'merge_maps = turtlebot4_custom_py.merge_maps:main',
         ],
     },
 )
