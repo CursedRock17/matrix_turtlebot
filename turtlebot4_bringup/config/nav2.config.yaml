@@ -181,6 +181,11 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
+      # On a docked cold start the map frame only appears after nav_to_node
+      # undocks (lidar back on) and sets the initial pose. The default 60 s
+      # activation timeout fired before that and aborted the whole bringup
+      # (2026-06-10 16:53 run), forcing a second nav2 launch.
+      initial_transform_timeout: 600.0
       footprint: "[[ 0.189,  0.000],
                   [ 0.134, -0.134],
                   [ 0.000, -0.189],

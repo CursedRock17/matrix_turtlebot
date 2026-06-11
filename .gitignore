@@ -59,3 +59,4 @@ claude_logs/
 
 # llama.cpp
 *.gguf
+models/*

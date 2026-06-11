@@ -11,13 +11,13 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 
 from sensor_msgs.msg import BatteryState
-from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Directions, TurtleBot4Navigator
+from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Navigator
 
 from turtlebot4_custom_py.startup import undock_and_localize
 
 BATTERY_HIGH = 0.95
 BATTERY_LOW = 0.30  # when the robot will go charge
-BATTERY_CRITICAL = 0.1  # when the robot will shutdown
+BATTERY_CRITICAL = 0.12  # when the robot will shutdown
 
 
 class BatteryMonitor(Node):
@@ -61,13 +61,14 @@ def main(args=None):
     thread.start()
 
     # Undock first (the docked robot has no lidar), localize, wait for Nav2
-    undock_and_localize(navigator)
+    locations = undock_and_localize(navigator)
     print("Running")
-    # Prepare goal poses
-    goal_pose = []
-    goal_pose.append(navigator.getPoseStamped([2.7, 0.25], TurtleBot4Directions.EAST))
-    goal_pose.append(navigator.getPoseStamped([2.89, 1.97], TurtleBot4Directions.NORTH))
-    goal_pose.append(navigator.getPoseStamped([-0.30, 2.9], TurtleBot4Directions.NORTH_WEST))
+    # Patrol waypoints come from the active map's locations file
+    goal_pose = locations.patrol_poses(navigator)
+    if not goal_pose:
+        navigator.error(f'No patrol list in {locations.map_yaml} locations file')
+        return
+
 
     while True:
         with lock:
@@ -83,8 +84,8 @@ def main(args=None):
             elif (battery_percent < BATTERY_LOW):
                 # Go near the dock
                 navigator.info('Docking for charge')
-                navigator.startToPose(navigator.getPoseStamped([-1.0, 1.0],
-                                      TurtleBot4Directions.EAST))
+                navigator.startToPose(
+                    navigator.getPoseStamped(*locations.dock_approach_pose))
                 navigator.dock()
 
                 if not navigator.getDockedStatus():

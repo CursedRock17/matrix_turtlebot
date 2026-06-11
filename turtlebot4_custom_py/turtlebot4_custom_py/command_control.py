@@ -15,7 +15,7 @@ from turtlebot4_custom_py.startup import undock_and_localize
 
 BATTERY_HIGH = 0.95
 BATTERY_LOW = 0.30  # when the robot will go charge
-BATTERY_CRITICAL = 0.1  # when the robot will shutdown
+BATTERY_CRITICAL = 0.12  # when the robot will shutdown
 
 
 class BatteryMonitor(Node):

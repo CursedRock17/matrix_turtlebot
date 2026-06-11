@@ -6,7 +6,7 @@ from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Directions, Tur
 
 from turtlebot4_custom_py.startup import undock_and_localize
 
-GOAL_POSITION = [-0.5, 0.35]
+GOAL_POSITION = [2.65, -1.625]
 GOAL_DIRECTION = TurtleBot4Directions.EAST
 
 
