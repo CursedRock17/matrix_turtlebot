@@ -10,12 +10,14 @@ import time
 import rclpy
 
 from rclpy.qos import qos_profile_sensor_data
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from std_srvs.srv import Empty
 
 from turtlebot4_custom_py.map_locations import load_map_locations
 
 SCAN_TIMEOUT_SEC = 10.0
+ROBOT_TIMEOUT_SEC = 10.0
 
 
 def _scan_arrives(navigator, timeout_sec=SCAN_TIMEOUT_SEC):
@@ -65,6 +67,39 @@ def _ensure_lidar_spinning(navigator):
             'see docs/troubleshooting.md).')
 
 
+def _wait_for_robot(navigator, timeout_sec=ROBOT_TIMEOUT_SEC):
+    """Fail fast if the robot isn't on the wire.
+
+    Every robot topic (dock_status, odom, scan, ...) is published by the
+    Create 3 / Pi, so if none arrive the laptop simply isn't talking to the
+    robot — unsourced/wrong ROS_DISCOVERY_SERVER, robot powered off, or off
+    BaleNet. Without this check the node blocks silently for minutes inside
+    getDockedStatus() (waiting on dock_status) while nav2 separately aborts on
+    a missing odom frame, with no hint why (2026-06-18 field session).
+
+    We wait on odom because the Create 3 publishes it continuously whether
+    docked or not (unlike scan, which is off while docked).
+    """
+    got = []
+    sub = navigator.create_subscription(
+        Odometry, 'odom', lambda msg: got.append(True),
+        qos_profile_sensor_data)
+    try:
+        deadline = time.monotonic() + timeout_sec
+        while not got and time.monotonic() < deadline and rclpy.ok():
+            rclpy.spin_once(navigator, timeout_sec=0.25)
+    finally:
+        navigator.destroy_subscription(sub)
+    if not got:
+        raise RuntimeError(
+            f'No data from the robot after {timeout_sec:.0f}s (nothing on '
+            '/odom). The laptop is not talking to the TurtleBot4. Check: robot '
+            'powered on and on BaleNet (`ping 192.168.50.223`); '
+            'ROS_DISCOVERY_SERVER is set (re-source turtlebot4_bringup/'
+            'setup.bash in this terminal); robot topics appear '
+            '(`ros2 topic list`). See docs/troubleshooting.md.')
+
+
 def undock_and_localize(navigator):
     """Start from the dock, undock to spin up the lidar, then wait for Nav2.
 
@@ -91,6 +126,11 @@ def undock_and_localize(navigator):
     # Don't localize until the lidar is confirmed back up — after a redock
     # it sometimes is not, and AMCL would silently wait forever.
     _ensure_lidar_spinning(navigator)
+
+    # Fail fast if the robot isn't reachable, instead of hanging silently in
+    # getDockedStatus() below (which blocks forever waiting on dock_status).
+    navigator.info('Waiting for the robot to come on the wire (odom)...')
+    _wait_for_robot(navigator)
 
     # The robot is now stationary just off the dock: tell AMCL where that is.
     initial_pose = navigator.getPoseStamped(*locations.undock_pose)

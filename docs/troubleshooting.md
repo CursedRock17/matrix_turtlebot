@@ -14,12 +14,15 @@
   getting laser scans. Check `ros2 topic hz /scan`; if the robot is docked the lidar is
   off — that's the bug the current `nav_to_node` ordering avoids, so make sure you're
   running the rebuilt version (`colcon build` + re-source).
-- **Robot disappears from RViz when starting nav2 / `CRITICAL FAILURE: SERVER amcl IS DOWN`**:
-  the localization lifecycle manager stopped receiving AMCL's heartbeat (4 s timeout)
-  because discovery/CPU got overloaded. Make sure nav2 is running via our composed
-  launch (`matrix_nav.launch.py` / `nav2.launch.py`, not `turtlebot4_navigation`'s
-  11-process one), check laptop CPU with `htop`, and check the Wi-Fi link to the robot with
-  `ping 192.168.50.223` while nav2 starts.
+- **`CRITICAL FAILURE: SERVER map_server IS DOWN` (or `amcl IS DOWN`) ~4 s after
+  localization activates / robot disappears from RViz**: the localization lifecycle
+  manager stopped receiving a server's bond heartbeat (4 s timeout) because the server's
+  executor got blocked or CPU/discovery got overloaded. Most reproducible on **large
+  maps** (`first_floor`, 2496×745 ≈ 1.86 MB) where map_server is busy sending the latched
+  map. Fix: launch localization via **`ros2 launch turtlebot4_bringup localization.launch.py`**
+  (our wrapper that disables the manager's bond watchdog with `SetParameter`), not
+  `turtlebot4_navigation localization.launch.py` directly. Also make sure nav2 is the
+  composed `nav2.launch.py` (not the 11-process one), and check laptop CPU with `htop`.
 - **Nav2 hangs at "Waiting for service ... get_state"**: discovery traffic is not
   flowing. Verify the discovery server on the robot is reachable (`ping 192.168.50.223`)
   and that stale ROS processes from earlier runs are killed.
@@ -39,6 +42,7 @@ Hard-won one-liners from real debugging sessions, each tagged with the problem i
 - The TurtleBot4 switches the lidar off while docked, so always undock before calling `waitUntilNav2Active()`: **docked localization deadlock**
 - The Create 3 undock backs off ~0.5 m and spins 180°, and the dock is only at `(0,0)` on maps whose SLAM run started there — the undock pose lives in each map's `maps/<name>.locations.yaml` and must be surveyed per map: **wrong initial pose**
 - Nav2's global costmap can't activate until AMCL publishes the `map` frame, which on a docked robot only happens after the nav node undocks — fixed by `initial_transform_timeout: 600.0` under `global_costmap` in nav2.config.yaml (default 60 s aborted the whole bringup), plus starting the nav node concurrently instead of waiting: **costmap never created**
+- Localization that dies ~4 s after `Managed nodes are active` is the bond watchdog, not the map or pose — a big map blocks map_server past the 4 s heartbeat; launch it via `turtlebot4_bringup localization.launch.py` (bond disabled), same trick as nav2: **localization self-destructs on big maps**
 - AMCL only publishes `amcl_pose` after processing a laser scan, so an endless `Waiting for amcl_pose` means no `/scan` data is arriving: **localization stuck**
 - Check the laptop's local discovery server with `ss -lun | grep 11888`, not pgrep — the processes are named `fastdds.py` and `fast-discovery-server`: **bt_navigator stall**
 - Nav2 bonds are disabled with `SetParameter` in `nav2.launch.py` because a params-file section never reaches the composed lifecycle manager: **collision_monitor bond timeout**

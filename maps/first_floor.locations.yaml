@@ -1,0 +1,46 @@
+# Surveyed poses for maps/first_floor.yaml, in its map frame.
+#
+# Every map needs a maps/<name>.locations.yaml like this one — the dock is
+# only at (0, 0) on maps whose SLAM run started on the dock. The nav nodes
+# load this file for whatever map /map_server has active and refuse to start
+# without it, because a wrong undock pose gives AMCL a garbage initial pose.
+#
+# direction is a compass name (north, north_west, west, ... in 45° steps) or
+# yaw in degrees (TurtleBot4 convention: north = 0, west = 90, south = 180,
+# east = 270).
+
+dock:
+  # The robot starts on the SECONDARY dock (surveyed at 33.646, -6.831 facing
+  # north). Where it ends up after undocking (~0.5 m back off the dock, spun
+  # 180°) is the AMCL initial pose.
+  # PROVISIONAL ESTIMATE — verify on the robot: undock once, then read the real
+  # pose (survey_locations, or RViz 2D Pose Estimate + echo /amcl_pose) and
+  # replace these numbers. A wrong undock_pose = garbage initial pose = no
+  # localization, so this is the value that matters most.
+  # Placeholder sits in free space in the open room east of the dock (the side
+  # the robot undocks toward), NOT the real undock pose yet — measure it.
+  undock_pose: {x: 34.5, y: -6.5, direction: north}
+  # Where to navigate before calling dock() when returning to charge.
+  # PROVISIONAL — a clear spot in the open room near the secondary dock.
+  approach_pose: {x: 34.5, y: -6.5, direction: south}
+
+# Named places the robot can be sent to. The names will eventually be what
+# the LLM maps natural-language commands onto, so prefer real room/landmark
+# names over generic ones.
+locations:
+  # near_dock IS the secondary dock — ~0.2 m off a wall, so it's a reference
+  # landmark, NOT a patrol goal (too tight for the planner to settle in).
+  near_dock: {x: 33.646, y: -6.831, direction: south}
+  # spot_a/spot_b are map-validated free space in the open room east of the
+  # dock (>=1 m wall clearance). Confirm they're actually clear on the robot.
+  spot_a: {x: 34.5, y: -5.0, direction: north}
+  spot_b: {x: 35.94, y: -7.5, direction: south}
+  crossroads_middle: {x: 36.78, y: -2.675, direction: south}
+  joe_office: {x: 15.16, y: -3.83, direction: east}
+  harold_office: {x: 11.52, y: -4.41, direction: east}
+  paa_dock: {x: -0.41, y: -1.15, direction: south}
+  jamison_office: {x: -12.47, y: -6.00, direction: north}
+
+
+# The loop nav_patrol_loop drives, in order, by location name.
+patrol: [crossroads_middle, joe_office, harold_office, paa_dock, jamison_office]
