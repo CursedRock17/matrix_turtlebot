@@ -14,6 +14,7 @@ example; the libraries at the bottom hold the startup and map logic they share.
 | `patrol_with_llm_node.py` | Patrols like `nav_patrol_loop`, but accepts LLM reroute commands mid-patrol and then resumes. |
 | `yolo_detection_node.py` | Runs a YOLO model on the camera stream (or a webcam) and publishes the detections, plus annotated frames for RViz. |
 | `frontier_exploration.py` | Frontier-based autonomous exploration of an unknown map — work in progress, no entry point in `setup.py` yet. |
+| `preflight.py` | Pre-launch health check ("doctor"): confirms the robot is actually publishing (`/odom`, `/battery_state`, `/scan`), pings it, checks the discovery server, and records a diagnostic bag — run it before launching to catch a silent robot in seconds instead of a 60 s nav2 abort. Exits non-zero if the robot isn't on the wire. |
 | `survey_locations.py` | Surveying helper: type a name, click the spot in RViz with 'Publish Point', and it prints a ready-to-paste `locations:` block for the active map's locations file. |
 | `merge_maps.py` | Offline CLI that merges two saved maps into one larger map, given the transform between their frames (see [docs/generate_a_map.md](../docs/generate_a_map.md)). |
 | `location_mapper_eval.py` | Scores the LLM location mapper against a fixed prompt set, including must-abstain cases — run it after changing the model, prompt, or locations; no robot needed. |

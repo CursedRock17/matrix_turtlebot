@@ -100,6 +100,27 @@ def _wait_for_robot(navigator, timeout_sec=ROBOT_TIMEOUT_SEC):
             '(`ros2 topic list`). See docs/troubleshooting.md.')
 
 
+def undock_relocalize(navigator, locations):
+    """Undock, confirm the lidar restarted, re-seed AMCL, and wait for Nav2.
+
+    Used at startup AND after every charge cycle: while docked the lidar is off
+    and AMCL goes stale, so the robot must re-localize on each undock, not only
+    the first one. Blocks until AMCL has a pose and Nav2 is active.
+    """
+    navigator.info('Undocking so the lidar is running before localizing')
+    navigator.undock()
+
+    # Don't localize until the lidar is confirmed back up — after a redock it
+    # sometimes is not, and AMCL would silently wait forever.
+    _ensure_lidar_spinning(navigator)
+
+    # The robot is now stationary just off the dock: tell AMCL where that is.
+    initial_pose = navigator.getPoseStamped(*locations.undock_pose)
+    navigator.setInitialPose(initial_pose)
+
+    navigator.waitUntilNav2Active()
+
+
 def undock_and_localize(navigator):
     """Start from the dock, undock to spin up the lidar, then wait for Nav2.
 
@@ -115,26 +136,19 @@ def undock_and_localize(navigator):
     locations = load_map_locations(navigator)
     navigator.info(f'Loaded location file for map: {locations.map_yaml}')
 
+    # Fail fast if the robot isn't reachable — this MUST come before any call
+    # that needs robot data. getDockedStatus() below blocks forever waiting on
+    # dock_status, and nav2 separately aborts on a missing odom frame, with no
+    # hint why (2026-06-18 field session: robot went silent after a power-cycle
+    # and the node dead-ended at "Loaded location file").
+    navigator.info('Waiting for the robot to come on the wire (odom)...')
+    _wait_for_robot(navigator)
+
     # Start from the dock so the robot begins at a known pose.
     if not navigator.getDockedStatus():
         navigator.info('Docking before initialising pose')
         navigator.dock()
 
-    navigator.info('Undocking so the lidar is running before localizing')
-    navigator.undock()
+    undock_relocalize(navigator, locations)
 
-    # Don't localize until the lidar is confirmed back up — after a redock
-    # it sometimes is not, and AMCL would silently wait forever.
-    _ensure_lidar_spinning(navigator)
-
-    # Fail fast if the robot isn't reachable, instead of hanging silently in
-    # getDockedStatus() below (which blocks forever waiting on dock_status).
-    navigator.info('Waiting for the robot to come on the wire (odom)...')
-    _wait_for_robot(navigator)
-
-    # The robot is now stationary just off the dock: tell AMCL where that is.
-    initial_pose = navigator.getPoseStamped(*locations.undock_pose)
-    navigator.setInitialPose(initial_pose)
-
-    navigator.waitUntilNav2Active()
     return locations

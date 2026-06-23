@@ -50,3 +50,4 @@ Hard-won one-liners from real debugging sessions, each tagged with the problem i
 - When a run hangs silently, check the previous run's container log in `~/.ros/log/` — an earlier attempt often logged the error the wedged one didn't: **silent hangs**
 - `ros2 topic delay /odom` above ~0.05 s means the laptop→Pi→Create 3 chrony chain hasn't converged and TF lookups will fail with extrapolation errors: **time-sync drift**
 - Kill stale ROS processes between test runs — orphan discovery servers hold port 11888 and leftover static TF publishers poison the real robot's TF tree: **ghost processes**
+- If a run dead-ends at "Loaded location file" or nav2 spams "base_link to odom did not become available", the robot is publishing nothing — run `ros2 run turtlebot4_custom_py preflight` to confirm and get a diagnostic bag; the fix is on the robot/connection side (power-cycle, re-source), not the code: **robot silent on the wire**

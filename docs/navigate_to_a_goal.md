@@ -30,6 +30,13 @@ that can starve AMCL's heartbeat.
 (sourcing `turtlebot4_bringup/setup.bash` also starts a local discovery server on the
 laptop if one isn't running yet — see Troubleshooting for why that matters)
 
+Before launching anything, sanity-check that the robot is actually on the wire —
+this catches the "robot went silent after a power-cycle" case in seconds instead
+of a 60 s nav2 abort, and drops a diagnostic bag in `claude_logs/`:
+`ros2 run turtlebot4_custom_py preflight`
+Wait for `VERDICT: robot is on the wire` before continuing. If it says NOT READY,
+fix the `[FAIL]` lines (robot powered on / on BaleNet / `setup.bash` sourced) first.
+
 2) In the First Terminal, run the visualization stack with RViz2:
 `ros2 launch turtlebot4_viz view_navigation.launch.py`
 

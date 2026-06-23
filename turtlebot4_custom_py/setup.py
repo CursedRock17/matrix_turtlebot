@@ -32,6 +32,7 @@ setup(
             'llm_navigation = turtlebot4_custom_py.llm_navigation_node:main',
             'patrol_with_llm = turtlebot4_custom_py.patrol_with_llm_node:main',
             'yolo_detection = turtlebot4_custom_py.yolo_detection_node:main',
+            'preflight = turtlebot4_custom_py.preflight:main',
             'survey_locations = turtlebot4_custom_py.survey_locations:main',
             'merge_maps = turtlebot4_custom_py.merge_maps:main',
         ],
