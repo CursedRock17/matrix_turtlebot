@@ -19,10 +19,10 @@ dock:
   # localization, so this is the value that matters most.
   # Placeholder sits in free space in the open room east of the dock (the side
   # the robot undocks toward), NOT the real undock pose yet — measure it.
-  undock_pose: {x: 34.5, y: -6.5, direction: north}
+  undock_pose: {x: 33.75, y: -6.25, direction: north}
   # Where to navigate before calling dock() when returning to charge.
   # PROVISIONAL — a clear spot in the open room near the secondary dock.
-  approach_pose: {x: 34.5, y: -6.5, direction: south}
+  approach_pose: {x: 33.75, y: -6.25, direction: south}
 
 # Named places the robot can be sent to. The names will eventually be what
 # the LLM maps natural-language commands onto, so prefer real room/landmark
@@ -36,11 +36,31 @@ locations:
   spot_a: {x: 34.5, y: -5.0, direction: north}
   spot_b: {x: 35.94, y: -7.5, direction: south}
   crossroads_middle: {x: 36.78, y: -2.675, direction: south}
-  joe_office: {x: 15.16, y: -3.83, direction: east}
-  harold_office: {x: 11.52, y: -4.41, direction: east}
+  joe_office: {x: 15.16, y: -3.83, direction: south_east}
+  harold_office: {x: 11.52, y: -4.41, direction: south_east}
   paa_dock: {x: -0.41, y: -1.15, direction: south}
-  jamison_office: {x: -12.47, y: -6.00, direction: north}
+  wei_kuo_justin_office: {x: -12.47, y: -6.00, direction: north}
+  # Additional surveyed landmarks (2026-06-24) — reference locations, NOT in the
+  # patrol list. Directions are the doorway/approach heading from the survey.
+  # All map-validated as free space; tight-clearance ones (< new 0.6 m inflation)
+  # are noted — they sit inside the inflated zone so approaching them is tighter.
+  jamison_office: {x: -8.87, y: -6.12, direction: east}          # 0.55 m clear (tight)
+  paa_doorway: {x: 0.43, y: 2.40, direction: north}              # 0.65 m clear
+  kitchenette: {x: -33.32, y: -6.28, direction: south}           # 1.06 m clear
+  ramp_start: {x: -4.55, y: 4.87, direction: west}               # 0.64 m clear
+  ramp_end: {x: -13.92, y: 7.77, direction: north}               # 0.74 m clear
+  entrance_lobby_center: {x: 38.30, y: 10.46, direction: west}   # 3.62 m clear
+  oasis_hallway: {x: -52.46, y: 12.31, direction: north_west}    # 1.21 m clear (far range test)
+  lauren_office: {x: 8.42, y: -4.68, direction: south_east}      # 0.82 m clear
+  intern_postdoc: {x: -1.38, y: -5.21, direction: east}          # 1.30 m clear
+  paa_side_entrance: {x: 27.37, y: -1.21, direction: west}       # 0.59 m clear (tight)
+  wood_shop: {x: 46.31, y: -2.46, direction: north_west}         # 0.89 m clear
+  robotics_lab: {x: 51.18, y: -7.57, direction: east}            # 0.47 m clear (tight)
+  # grad_students_postdoc (-24.92, 6.15) OMITTED — lands in a wall on the map;
+  # re-survey, likely a coord just inside the doorway.
 
 
-# The loop nav_patrol_loop drives, in order, by location name.
-patrol: [crossroads_middle, joe_office, harold_office, paa_dock, jamison_office]
+# The loop nav_patrol_loop drives, in order, by location name. Out-and-back
+# along the corridor so no single leg is the full ~50 m (which overran the goal
+# timeout): the middle points repeat on the return.
+patrol: [crossroads_middle, joe_office, harold_office, paa_dock, wei_kuo_justin_office, paa_dock, ramp_start, ramp_end, ramp_start, paa_dock, harold_office, joe_office]

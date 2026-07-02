@@ -1,53 +1,60 @@
+# Troubleshooting
 
-### Troubleshooting
-- **The nav2 launch never prints `Managed nodes are active` / stuck after `Activating bt_navigator`**:
-  bt_navigator's activation builds the behavior tree, whose action clients must be
-  matched with their servers by a discovery server. If the only discovery server is the
-  one on the robot's Pi, that matching crosses the Wi-Fi and can stall forever. The fix
-  is the local discovery server on the laptop (`127.0.0.1:11888`), which
-  `turtlebot4_bringup/setup.bash` starts automatically. Check it's alive with
-  `ss -lun | grep 11888` (you should see a UDP listener), re-source the
-  setup.bash if not, then restart the nav2 launch.
-- **RViz says `navigate_to_pose action server is not available`**: same cause as above —
-  bt_navigator isn't active yet (or never became active).
-- **`nav_to_node` loops printing `Waiting for amcl_pose to be received`**: AMCL isn't
-  getting laser scans. Check `ros2 topic hz /scan`; if the robot is docked the lidar is
-  off — that's the bug the current `nav_to_node` ordering avoids, so make sure you're
-  running the rebuilt version (`colcon build` + re-source).
-- **`CRITICAL FAILURE: SERVER map_server IS DOWN` (or `amcl IS DOWN`) ~4 s after
-  localization activates / robot disappears from RViz**: the localization lifecycle
-  manager stopped receiving a server's bond heartbeat (4 s timeout) because the server's
-  executor got blocked or CPU/discovery got overloaded. Most reproducible on **large
-  maps** (`first_floor`, 2496×745 ≈ 1.86 MB) where map_server is busy sending the latched
-  map. Fix: launch localization via **`ros2 launch turtlebot4_bringup localization.launch.py`**
-  (our wrapper that disables the manager's bond watchdog with `SetParameter`), not
-  `turtlebot4_navigation localization.launch.py` directly. Also make sure nav2 is the
-  composed `nav2.launch.py` (not the 11-process one), and check laptop CPU with `htop`.
-- **Nav2 hangs at "Waiting for service ... get_state"**: discovery traffic is not
-  flowing. Verify the discovery server on the robot is reachable (`ping 192.168.50.223`)
-  and that stale ROS processes from earlier runs are killed.
-- **Robot drives but localization drifts or jumps**: run the time-sync pre-flight check
-  (`ros2 topic delay /odom`, want ~0.01–0.05 s) — see [time_sync.md](./time_sync.md).
-- **`Failed to activate global_costmap because transform from base_link to map did not
-  become available` then `Failed to bring up all requested nodes. Aborting bringup`**:
-  nothing is publishing the `map` frame yet — AMCL only broadcasts map→odom once it has
-  laser scans (robot undocked) AND an initial pose (`nav_to_node` sets it). Start
-  `nav_to_node` right after launching nav2 instead of waiting for activation;
-  `initial_transform_timeout: 600.0` in nav2.config.yaml makes nav2 wait up to 10
-  minutes for this instead of aborting at 60 s.
+Fast path: if the robot seems unresponsive at all, run the doctor first —
+`ros2 run turtlebot4_custom_py preflight`. It checks the laptop↔robot link, the
+discovery server, dock state, and `/odom` `/scan` `/battery_state` rates, and
+drops a diagnostic bag in `claude_logs/`. Most of the tables below start there.
 
-### Claude Notes
-Hard-won one-liners from real debugging sessions, each tagged with the problem it solves.
+## Connectivity & discovery (robot ↔ laptop)
 
-- The TurtleBot4 switches the lidar off while docked, so always undock before calling `waitUntilNav2Active()`: **docked localization deadlock**
-- The Create 3 undock backs off ~0.5 m and spins 180°, and the dock is only at `(0,0)` on maps whose SLAM run started there — the undock pose lives in each map's `maps/<name>.locations.yaml` and must be surveyed per map: **wrong initial pose**
-- Nav2's global costmap can't activate until AMCL publishes the `map` frame, which on a docked robot only happens after the nav node undocks — fixed by `initial_transform_timeout: 600.0` under `global_costmap` in nav2.config.yaml (default 60 s aborted the whole bringup), plus starting the nav node concurrently instead of waiting: **costmap never created**
-- Localization that dies ~4 s after `Managed nodes are active` is the bond watchdog, not the map or pose — a big map blocks map_server past the 4 s heartbeat; launch it via `turtlebot4_bringup localization.launch.py` (bond disabled), same trick as nav2: **localization self-destructs on big maps**
-- AMCL only publishes `amcl_pose` after processing a laser scan, so an endless `Waiting for amcl_pose` means no `/scan` data is arriving: **localization stuck**
-- Check the laptop's local discovery server with `ss -lun | grep 11888`, not pgrep — the processes are named `fastdds.py` and `fast-discovery-server`: **bt_navigator stall**
-- Nav2 bonds are disabled with `SetParameter` in `nav2.launch.py` because a params-file section never reaches the composed lifecycle manager: **collision_monitor bond timeout**
-- Full node logs live in `~/.ros/log/` even when a redirected terminal captured nothing, because `ros2 run` buffers stdout: **empty terminal capture**
-- When a run hangs silently, check the previous run's container log in `~/.ros/log/` — an earlier attempt often logged the error the wedged one didn't: **silent hangs**
-- `ros2 topic delay /odom` above ~0.05 s means the laptop→Pi→Create 3 chrony chain hasn't converged and TF lookups will fail with extrapolation errors: **time-sync drift**
-- Kill stale ROS processes between test runs — orphan discovery servers hold port 11888 and leftover static TF publishers poison the real robot's TF tree: **ghost processes**
-- If a run dead-ends at "Loaded location file" or nav2 spams "base_link to odom did not become available", the robot is publishing nothing — run `ros2 run turtlebot4_custom_py preflight` to confirm and get a diagnostic bag; the fix is on the robot/connection side (power-cycle, re-source), not the code: **robot silent on the wire**
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ros2 topic list` shows only `/rosout` + `/parameter_events`, even shelled into the Pi | The Fast DDS discovery server isn't running on the Pi. `turtlebot4-setup` writes the service file but doesn't enable it, so it's a leftover process that dies on reboot | Make it persistent: enable `discovery.service` (or install one running `fastdds discovery -i 0 -l 0.0.0.0 -p 11811`), `sudo systemctl enable --now discovery`. Verify `ss -lunp \| grep 11811`. |
+| Laptop sees no robot topics; nodes hang; nav2 spams `base_link to odom did not become available` | Robot is publishing nothing to the laptop — powered off/booting, `ROS_DISCOVERY_SERVER` unset, or discovery server down | `preflight`; power on and wait ~90 s; `ping 192.168.50.224`; re-source `turtlebot4_bringup/setup.bash`. It's a connection issue, not the code. |
+| A nav node dead-ends at "Loaded location file" and hangs | Same as above — robot silent on the wire (`/odom`, `/dock_status` absent) | `preflight`; the `_wait_for_robot` guard now fails fast with an actionable message. |
+| nav2 stuck at `Activating bt_navigator` / RViz: `navigate_to_pose action server is not available` | bt_navigator's BT action clients must be matched by a discovery server; over Wi-Fi to the Pi that stalls forever | Local discovery server on the laptop (`127.0.0.1:11888`), auto-started by `setup.bash`. Check `ss -lun \| grep 11888`; re-source if missing. |
+| Everything broke after the robot's IP changed | The Pi is now `192.168.50.224` (was `.223`). The discovery script has no IP, but `ROS_DISCOVERY_SERVER` and docs do | Update the laptop `ROS_DISCOVERY_SERVER` in `setup.bash`. The Create 3 reaches the Pi over usb0 (`192.168.186.3`, unchanged), so its own config needs nothing. |
+
+## Startup: localization & nav2
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `CRITICAL FAILURE: SERVER map_server IS DOWN` (or `amcl IS DOWN`) ~4 s after `Managed nodes are active`; robot vanishes from RViz | The localization lifecycle manager's 4 s bond watchdog — a big map (first_floor, 2496×745 ≈ 1.86 MB) blocks map_server's executor past the heartbeat | Launch localization via `ros2 launch turtlebot4_bringup localization.launch.py` (our bond-disabled wrapper), NOT `turtlebot4_navigation`'s. |
+| `Failed to activate global_costmap … transform base_link to map` → `Aborting bringup`; "have to run nav2 twice" | The global costmap needs the `map` frame, which AMCL only publishes after the nav node undocks and sets the initial pose | Start the nav node right after launching nav2 (don't wait for activation). `initial_transform_timeout: 600` in `nav2.config.yaml` lets it wait instead of aborting at 60 s. |
+| nav2 hangs at "Waiting for service … get_state" | Discovery traffic not flowing | Verify the discovery server is reachable (`ping 192.168.50.224`) and kill stale ROS processes. |
+
+## Navigation behaviour
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Goals abort `Failed to make progress` / `getTransform … extrapolation into the future`; lidar spinning but `/scan` looks "stale" in RViz | Intermittent 1–2 s stalls in scan/tf/odom **delivery**, NOT clock skew (mean `/scan` age was 17 ms; it had 1.9 s gaps). From laptop CPU saturation and/or Wi-Fi | Reduce laptop load (`use_rviz:=false`, watch `htop`); long-term run nav2 on the Pi. The patrol loop holds instead of driving blind. |
+| Robot drives but localization drifts or jumps | Time sync (laptop→Pi→Create 3 chrony chain) not converged | `ros2 topic delay /odom` (want 0.01–0.05 s); see [time_sync.md](./time_sync.md). |
+| `/scan` publishes fine (7 Hz) but nav is dead for ~30 min: `collision_monitor … timestamps differ … Ignoring the source`, TF `extrapolation into the past` | A robot-side clock diverged mid-run (seconds to minutes); chrony corrects by *slewing*, so nav2 rejects every scan until it converges | `makestep 1 -1` in the Pi's chrony.conf (steps instantly). The patrol loop now holds on stamp skew and says so. Cause hunt: `journalctl -u chrony` on the Pi — see [time_sync.md](./time_sync.md) case study. |
+| Patrol ends with `Failed to dock for charging` — robot stops short of the dock | The Create 3's IR docking only works from ~1 m with the dock in view; nav2 can deliver the approach pose with enough error to miss that window | The patrol loop retries docking (3×), re-navigating to the approach pose between tries. Survey `approach_pose` ~0.5–1 m squarely in front of the dock. |
+| A single goal overruns and gets cancelled | Building-scale legs are long and slow | `GOAL_TIMEOUT_SEC` is 300 s; keep patrol legs short (the first_floor patrol is out-and-back so no leg is the full ~50 m). |
+| Robot clips people's feet | Feet sit below the lidar plane — legs are detected, feet are not | Keep-out widened (`inflation_radius: 0.6`); note the Create 3 bumpers don't trigger on thin legs. |
+| `Waiting for amcl_pose to be received` loops forever | AMCL has no laser scan — robot docked (lidar off) or silent | `ros2 topic hz /scan`; the nav nodes now spin the lidar up front, so rebuild + re-source if you still see this. |
+
+## Lidar & sensors
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `/scan` stops publishing while docked | The Create 3 powers the RPLIDAR off whenever it's docked — by design | Undock first (the nodes do), or `/start_motor`. This is NOT a hardware fault; docked bags showing `/scan` gaps with `is_docked=true` are expected. |
+| Startup deadlocks — "waiting for costmap / lidar / initial pose", all circular | costmap ← scan ← lidar chicken-and-egg | `startup.py` calls `/start_motor` **first** (idempotent; never stops the lidar). The undock is only for the pose, not to wake the lidar. |
+| Node fails ~10 s after undock with "no scan" | Lidar didn't restart on undock (known redock issue) | The node retries `/start_motor` automatically; power-cycle the robot if `/scan` stays silent. |
+
+## Endurance & platform (Raspberry Pi)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| After ~40 min, `/odom` + `/scan` stop, `/diagnostics` still looks healthy, `ping` hangs (not "unreachable") but the router shows the robot connected | Pi network stack wedged — onboard Wi-Fi (`brcmfmac`) under sustained streaming, thermal throttling, or USB-C power sag (the Create 3 powers the Pi over that cable) | Cool the Pi (heatsink/fan); log `vcgencmd measure_temp` / `get_throttled` / `free -m` over a run; inspect the USB-C cable. Long-term: less over-Wi-Fi traffic (nav2 on the Pi). |
+| Discovery server / all topics vanish after a reboot | The discovery server was never enabled to auto-start | Persistent `discovery.service` — see the Connectivity table. |
+| RPLIDAR (and the Pi's whole ROS stack) never comes up after boot | `turtlebot4.service` — the Pi's ROS bringup — found *disabled* (2026-07-01), same never-enabled disease as the discovery service | `ssh` in, `sudo systemctl enable --now turtlebot4.service`. After any `turtlebot4-setup` run, verify: `systemctl is-enabled turtlebot4 discovery`. |
+
+## Debugging tips
+
+- Full node logs live in `~/.ros/log/` even when a redirected terminal captured nothing — `ros2 run` buffers stdout. Read the file, not the terminal.
+- When a run hangs silently, check the **previous** run's container log in `~/.ros/log/` — an earlier attempt often logged the error the wedged one didn't.
+- Kill stale ROS processes between runs — orphan discovery servers hold port 11888 and leftover static TF publishers poison the real robot's TF tree.
+- The laptop's local discovery server processes are named `fastdds.py` / `fast-discovery-server`, so check the port (`ss -lun | grep 11888`), not `pgrep`.
+- `preflight` records a bag to `claude_logs/preflight_HHMMSS` every run — a failed startup always leaves the evidence.

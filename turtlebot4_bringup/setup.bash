@@ -7,7 +7,7 @@ export ROS_DOMAIN_ID=5
 # each other without a round trip over WiFi -- without it, bt_navigator hangs
 # forever in 'Activating' waiting for its own BT action clients to be matched
 # by the Pi (see docs/navigate_to_a_goal.md troubleshooting).
-export ROS_DISCOVERY_SERVER="192.168.50.223:11811;127.0.0.1:11888;"
+export ROS_DISCOVERY_SERVER="192.168.50.224:11811;127.0.0.1:11888;"
 if ! ss -lun 2>/dev/null | grep -q ':11888 '; then
     (nohup fastdds discovery -i 1 -l 127.0.0.1 -p 11888 > /dev/null 2>&1 &)
 fi

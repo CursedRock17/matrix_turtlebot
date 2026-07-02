@@ -4,14 +4,23 @@ the turtlebot4 packages are flashed/installed. For the flashing/imaging steps
 see [setup.md](./setup.md).
 
 ## 1) Network + ROS config with `turtlebot4-setup`
-ssh into the RPi (`ssh ubuntu@192.168.50.223` on BaleNet, password `ubuntu`)
+ssh into the RPi (`ssh ubuntu@192.168.50.224` on BaleNet, password `ubuntu`)
 and run `turtlebot4-setup`. Configure:
 
 - **Wi-Fi Setup**: connect to `BaleNet` (no internet on this network — that's
   fine, see [time_sync.md](./time_sync.md) for the consequences).
 - **ROS Setup -> Discovery Server**: enabled, the RPi is the discovery server.
-  Our laptops expect it at `192.168.50.223:11811` (see
-  `turtlebot4_bringup/setup.bash`).
+  Our laptops expect it at `192.168.50.224:11811` (see
+  `turtlebot4_bringup/setup.bash`). **Verify it actually persists.** The server
+  runs from `/usr/sbin/discovery` (`fastdds discovery -i 0 -p 11811`), but
+  `turtlebot4-setup` has been seen to leave its systemd service *disabled* — so
+  it survives only as a leftover process and vanishes on the next reboot (this
+  cost us an entire evening after an IP change). After apply + reboot, confirm
+  `ss -lunp | grep 11811` shows it listening; if not:
+  `sudo systemctl enable --now discovery` (or install a unit that runs
+  `fastdds discovery -i 0 -l 0.0.0.0 -p 11811`). The discovery script has no IP
+  in it, so an IP change never breaks it directly — a reboot exposing the
+  un-enabled service is what breaks it.
 - **ROS Setup -> Bash Setup**:
   - `ROS_DOMAIN_ID`: `5`
   - `ROBOT_NAMESPACE`: leave **empty** for the single-robot setup — the docs
@@ -20,10 +29,16 @@ and run `turtlebot4-setup`. Configure:
     set it here, then pass the same value as `namespace:=<ns>` to every
     launch and as `--ros-args -r __ns:=/<ns>` to every `ros2 run` node.
 - Apply settings; the RPi will restart its services.
+- **Then verify both services are enabled, not just running**:
+  `systemctl is-enabled turtlebot4 discovery` — both should say `enabled`.
+  `turtlebot4.service` (the ROS bringup that starts the RPLIDAR etc.) has also
+  been found disabled after setup (2026-07-01: the lidar wouldn't start until
+  `sudo systemctl enable --now turtlebot4.service`). A service that's merely
+  *running* dies on the next reboot.
 
 The laptop side of this config lives in `turtlebot4_bringup/setup.bash`
 (`RMW_IMPLEMENTATION=rmw_fastrtps_cpp`, `ROS_DOMAIN_ID=5`,
-`ROS_DISCOVERY_SERVER="192.168.50.223:11811;127.0.0.1:11888;"`,
+`ROS_DISCOVERY_SERVER="192.168.50.224:11811;127.0.0.1:11888;"`,
 `ROS_SUPER_CLIENT=True` in interactive shells) — source it in every terminal
 that talks to the robot. Sourcing it also auto-starts a **second, local
 discovery server** on the laptop (`fastdds discovery -i 1 -l 127.0.0.1 -p 11888`).
@@ -41,7 +56,7 @@ and serves the Create 3. In particular, make sure the RPi's chrony config does
 ## 3) Verification checklist
 After a fresh boot of the robot, from a sourced laptop terminal:
 
-1. `ping 192.168.50.223` — RPi reachable on BaleNet.
+1. `ping 192.168.50.224` — RPi reachable on BaleNet.
 2. `ros2 topic list` — should show the robot's topics (`/scan`, `/odom`,
    `/tf`, ...). If you only see `/parameter_events` and `/rosout`, the
    discovery server isn't reachable or your terminal isn't sourced.
@@ -52,8 +67,12 @@ After a fresh boot of the robot, from a sourced laptop terminal:
    `ros2 action send_goal /undock irobot_create_msgs/action/Undock "{}"`
 
 ## Known failure modes
-- **Empty `ros2 topic list`**: discovery server down or laptop env not
-  sourced. Check `ping`, then re-source `turtlebot4_bringup/setup.bash`.
+- **Empty `ros2 topic list`** (only `/rosout` + `/parameter_events`) — **even
+  when shelled into the Pi**: the discovery server isn't running. See the
+  persistence note in step 1: `ss -lunp | grep 11811`, then
+  `sudo systemctl enable --now discovery`. If it's empty only on the *laptop*,
+  that's the laptop env — `ping` the Pi and re-source
+  `turtlebot4_bringup/setup.bash`.
 - **Robot visible but nav unusable, message filters dropping everything**:
   clock skew — run the time sync pre-flight check.
 - **Everything dies the moment nav2 starts** (`CRITICAL FAILURE: SERVER amcl

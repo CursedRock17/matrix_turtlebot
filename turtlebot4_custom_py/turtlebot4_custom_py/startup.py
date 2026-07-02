@@ -16,8 +16,9 @@ from std_srvs.srv import Empty
 
 from turtlebot4_custom_py.map_locations import load_map_locations
 
-SCAN_TIMEOUT_SEC = 10.0
-ROBOT_TIMEOUT_SEC = 10.0
+SCAN_TIMEOUT_SEC = 60.0
+ROBOT_TIMEOUT_SEC = 60.0
+MIN_SCAN_HZ = 4.0  # a healthy RPLIDAR is ~7-10 Hz; below this it's too degraded to navigate on
 
 
 def _scan_arrives(navigator, timeout_sec=SCAN_TIMEOUT_SEC):
@@ -35,36 +36,64 @@ def _scan_arrives(navigator, timeout_sec=SCAN_TIMEOUT_SEC):
         navigator.destroy_subscription(sub)
 
 
-def _ensure_lidar_spinning(navigator):
-    """Make sure the RPLIDAR actually restarted after the undock.
+def _scan_rate(navigator, window_sec=3.0):
+    """Measured /scan rate (Hz) over a short window."""
+    count = [0]
+    sub = navigator.create_subscription(
+        LaserScan, 'scan', lambda msg: count.__setitem__(0, count[0] + 1),
+        qos_profile_sensor_data)
+    try:
+        deadline = time.monotonic() + window_sec
+        while time.monotonic() < deadline and rclpy.ok():
+            rclpy.spin_once(navigator, timeout_sec=0.1)
+    finally:
+        navigator.destroy_subscription(sub)
+    return count[0] / window_sec
 
-    The lidar is stopped while docked by design, but after a redock it has
-    been seen to stay stopped on undock (bags/fifth_bag; turtlebot4 issues
-    #392/#658). Without scans AMCL waits forever and the startup just hangs
-    silently, so check for scan data and try a motor restart before giving
-    an actionable error.
-    """
-    if _scan_arrives(navigator):
-        return
 
-    navigator.warn('No laser scans after undocking — asking the RPLIDAR to restart')
+def _call_start_motor(navigator):
+    """Ask the RPLIDAR to start spinning. Idempotent and safe: /start_motor
+    starts the lidar (a no-op if it's already running) and never stops it."""
     client = navigator.create_client(Empty, 'start_motor')
     try:
         if client.wait_for_service(timeout_sec=5.0):
             future = client.call_async(Empty.Request())
             rclpy.spin_until_future_complete(navigator, future, timeout_sec=5.0)
         else:
-            navigator.warn('No start_motor service found to restart the lidar with')
+            navigator.warn('No start_motor service found to start the lidar with')
     finally:
         navigator.destroy_client(client)
 
+
+def _ensure_lidar_spinning(navigator):
+    """Spin the RPLIDAR up PROACTIVELY and confirm scans are flowing.
+
+    The dock powers the lidar down, so instead of relying on an undock to wake
+    it, we call /start_motor directly (idempotent — it never stops a running
+    lidar). Run up front in undock_and_localize so scans flow before the
+    costmap/AMCL need them, and again after every redock. Raises if no scan
+    appears even after starting the motor.
+    """
+    _call_start_motor(navigator)
     if not _scan_arrives(navigator):
-        raise RuntimeError(
-            'Still no data on scan after undocking and restarting the lidar '
-            'motor. AMCL cannot localize without scans, so navigation would '
-            'hang at "Waiting for amcl_pose". Check `ros2 topic hz /scan`; '
-            'if it stays silent, power-cycle the robot (known redock issue, '
-            'see docs/troubleshooting.md).')
+        navigator.warn('No laser scans yet — asking the RPLIDAR to start again')
+        _call_start_motor(navigator)
+        if not _scan_arrives(navigator):
+            raise RuntimeError(
+                'Still no data on /scan after starting the lidar motor. AMCL '
+                'cannot localize without scans, so navigation would hang at '
+                '"Waiting for amcl_pose". Check `ros2 topic hz /scan`; if it '
+                'stays silent, power-cycle the robot (see docs/troubleshooting.md).')
+
+    # Scan is flowing — confirm it's a usable rate, not a degraded trickle.
+    # (This is a startup gate; the patrol loop's runtime scan watchdog guards
+    # against the intermittent mid-run stalls.)
+    hz = _scan_rate(navigator)
+    if hz < MIN_SCAN_HZ:
+        navigator.warn(f'/scan is only {hz:.1f} Hz (want >= {MIN_SCAN_HZ:.0f} Hz) — '
+                       'lidar looks degraded; navigation will be unreliable')
+    else:
+        navigator.info(f'/scan healthy at {hz:.1f} Hz')
 
 
 def _wait_for_robot(navigator, timeout_sec=ROBOT_TIMEOUT_SEC):
@@ -94,7 +123,7 @@ def _wait_for_robot(navigator, timeout_sec=ROBOT_TIMEOUT_SEC):
         raise RuntimeError(
             f'No data from the robot after {timeout_sec:.0f}s (nothing on '
             '/odom). The laptop is not talking to the TurtleBot4. Check: robot '
-            'powered on and on BaleNet (`ping 192.168.50.223`); '
+            'powered on and on BaleNet (`ping 192.168.50.224`); '
             'ROS_DISCOVERY_SERVER is set (re-source turtlebot4_bringup/'
             'setup.bash in this terminal); robot topics appear '
             '(`ros2 topic list`). See docs/troubleshooting.md.')
@@ -107,11 +136,11 @@ def undock_relocalize(navigator, locations):
     and AMCL goes stale, so the robot must re-localize on each undock, not only
     the first one. Blocks until AMCL has a pose and Nav2 is active.
     """
-    navigator.info('Undocking so the lidar is running before localizing')
+    navigator.info('Undocking to the known off-dock pose')
     navigator.undock()
 
-    # Don't localize until the lidar is confirmed back up — after a redock it
-    # sometimes is not, and AMCL would silently wait forever.
+    # Re-confirm the lidar (idempotent /start_motor) after the undock — needed
+    # for the charge-cycle redock, where the dock had powered it down again.
     _ensure_lidar_spinning(navigator)
 
     # The robot is now stationary just off the dock: tell AMCL where that is.
@@ -122,10 +151,12 @@ def undock_relocalize(navigator, locations):
 
 
 def undock_and_localize(navigator):
-    """Start from the dock, undock to spin up the lidar, then wait for Nav2.
+    """Spin up the lidar, undock to the known pose, then wait for Nav2.
 
-    Blocks until AMCL has confirmed the pose against a laser scan and
-    bt_navigator reports active. The robot ends up just off the dock,
+    Order: confirm the robot is on the wire, start the lidar (so scans flow
+    before the costmap/AMCL need them), then dock→undock to the known pose,
+    set the initial pose, and block until AMCL has confirmed it against a scan
+    and bt_navigator reports active. The robot ends up just off the dock,
     localized and ready to navigate.
 
     Returns the MapLocations for the active map, so callers can navigate to
@@ -136,19 +167,24 @@ def undock_and_localize(navigator):
     locations = load_map_locations(navigator)
     navigator.info(f'Loaded location file for map: {locations.map_yaml}')
 
-    # Fail fast if the robot isn't reachable — this MUST come before any call
-    # that needs robot data. getDockedStatus() below blocks forever waiting on
-    # dock_status, and nav2 separately aborts on a missing odom frame, with no
-    # hint why (2026-06-18 field session: robot went silent after a power-cycle
-    # and the node dead-ended at "Loaded location file").
+    # Fail fast if the robot isn't reachable — MUST come before any call that
+    # needs robot data (getDockedStatus() blocks forever on dock_status, and
+    # nav2 aborts on a missing odom frame, with no hint why — 2026-06-18).
     navigator.info('Waiting for the robot to come on the wire (odom)...')
     _wait_for_robot(navigator)
+
+    # Spin the lidar up FRONT — before the dock/undock dance and before nav2's
+    # costmap waits on /scan. /start_motor wakes it even while docked and is
+    # idempotent (it never stops a running lidar), so doing this first breaks
+    # the costmap <- scan <- lidar startup deadlock (2026-06-24 field finding).
+    _ensure_lidar_spinning(navigator)
 
     # Start from the dock so the robot begins at a known pose.
     if not navigator.getDockedStatus():
         navigator.info('Docking before initialising pose')
         navigator.dock()
 
+    # Undock to the known off-dock pose, then localize and wait for Nav2.
     undock_relocalize(navigator, locations)
 
     return locations

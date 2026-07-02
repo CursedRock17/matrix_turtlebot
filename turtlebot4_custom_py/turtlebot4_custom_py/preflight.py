@@ -21,14 +21,15 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 
+from irobot_create_msgs.msg import DockStatus
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import BatteryState, LaserScan
 
-ROBOT_IP = '192.168.50.223'
+ROBOT_IP = '192.168.50.224'  # RPi on BaleNet; override with -p robot_ip:= if it changes
 # Recorded to the diagnostic bag generically, so the ones we don't subscribe
 # to live (tf, dock_status, ...) need no message imports here.
 BAG_TOPICS = ['/odom', '/tf', '/tf_static', '/scan', '/dock_status',
-              '/battery_state', '/amcl_pose', '/initialpose']
+              '/battery_state', '/amcl_pose', '/initialpose', '/diagnostics']
 
 OK, FAIL, WARN = '[ OK ]', '[FAIL]', '[WARN]'
 
@@ -38,13 +39,18 @@ class Preflight(Node):
     def __init__(self):
         super().__init__('preflight_doctor')
         self.declare_parameter('robot_ip', ROBOT_IP)
-        self.declare_parameter('window_sec', 6.0)
+        self.declare_parameter('window_sec', 8.0)
         self.declare_parameter('bag_dir', 'claude_logs')
 
         self.counts = {'/odom': 0, '/battery_state': 0, '/scan': 0}
         self.odom_delay_sum = 0.0
+        self.is_docked = None
         self.create_subscription(
             Odometry, 'odom', self._odom_cb, qos_profile_sensor_data)
+        self.create_subscription(
+            DockStatus, 'dock_status',
+            lambda m: setattr(self, 'is_docked', m.is_docked),
+            qos_profile_sensor_data)
         self.create_subscription(
             BatteryState, 'battery_state',
             lambda m: self._bump('/battery_state'), qos_profile_sensor_data)
@@ -92,7 +98,7 @@ def main(args=None):
                       (WARN, 'local discovery server :11888 NOT listening — '
                              're-source setup.bash'))
 
-    ping = _run(['ping', '-c', '2', '-W', '2', ip], 6)
+    ping = _run(['ping', '-c', '2', '-W', '2', ip], 10)
     reachable = ping is not None and ping.returncode == 0
     checks.append((OK, f'robot {ip} reachable') if reachable else
                   (FAIL, f'robot {ip} NOT reachable — powered on and on BaleNet?'))
@@ -124,6 +130,14 @@ def main(args=None):
     # scan is off while docked, so its absence alone is not a failure.
     checks.append((OK, f"/scan: {c['/scan']} msgs") if c['/scan'] else
                   (WARN, '/scan: 0 msgs (normal while docked; lidar starts on undock)'))
+    if node.is_docked is True:
+        checks.append((WARN, 'robot is DOCKED — the lidar is off/unreliable until it '
+                             'undocks; the node auto-undocks, but for a MANUAL flow send '
+                             '/undock first (this is why /scan stops while docked)'))
+    elif node.is_docked is False:
+        checks.append((OK, 'robot is undocked — lidar should be running'))
+    else:
+        checks.append((WARN, '/dock_status: no message received'))
     if odom_ok:
         avg = node.odom_delay_sum / c['/odom']
         checks.append((OK, f'odom timestamp delay ~{avg*1000:.0f} ms') if avg < 0.05 else
