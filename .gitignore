@@ -40,6 +40,12 @@
 # debug information files
 *.dwo
 
+# Python bytecode (regenerated on every run/build)
+*/__pycache__/*
+*.py[cod]
+*.cpython-312.pyc
+
+
 # Virtual Environment
 turtlebot4_venv
 
@@ -48,6 +54,7 @@ build/*
 log/*
 install/*
 llama.cpp
+ros_bags/*
 
 # Frames Info
 frames_*

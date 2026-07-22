@@ -63,4 +63,6 @@ locations:
 # The loop nav_patrol_loop drives, in order, by location name. Out-and-back
 # along the corridor so no single leg is the full ~50 m (which overran the goal
 # timeout): the middle points repeat on the return.
-patrol: [crossroads_middle, joe_office, harold_office, paa_dock, wei_kuo_justin_office, paa_dock, ramp_start, ramp_end, ramp_start, paa_dock, harold_office, joe_office]
+# Ramp legs (ramp_start, ramp_end) removed 2026-07-08: too much foot traffic
+# on the ramp. The patrol now turns around at wei_kuo_justin_office.
+patrol: [crossroads_middle, joe_office, harold_office, paa_dock, wei_kuo_justin_office, paa_dock, harold_office, joe_office]

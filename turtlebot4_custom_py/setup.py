@@ -34,6 +34,8 @@ setup(
             'yolo_detection = turtlebot4_custom_py.yolo_detection_node:main',
             'preflight = turtlebot4_custom_py.preflight:main',
             'survey_locations = turtlebot4_custom_py.survey_locations:main',
+            'wifi_survey = turtlebot4_custom_py.wifi_survey:main',
+            'bump_to_cloud = turtlebot4_custom_py.bump_to_cloud:main',
             'merge_maps = turtlebot4_custom_py.merge_maps:main',
         ],
     },

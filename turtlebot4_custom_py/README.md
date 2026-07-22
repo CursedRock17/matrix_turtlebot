@@ -15,13 +15,17 @@ example; the libraries at the bottom hold the startup and map logic they share.
 | `yolo_detection_node.py` | Runs a YOLO model on the camera stream (or a webcam) and publishes the detections, plus annotated frames for RViz. |
 | `frontier_exploration.py` | Frontier-based autonomous exploration of an unknown map — work in progress, no entry point in `setup.py` yet. |
 | `preflight.py` | Pre-launch health check ("doctor"): confirms the robot is actually publishing (`/odom`, `/battery_state`, `/scan`), pings it, checks the discovery server, and records a diagnostic bag — run it before launching to catch a silent robot in seconds instead of a 60 s nav2 abort. Exits non-zero if the robot isn't on the wire. |
+| `wifi_survey.py` | Wi-Fi site-survey logger: samples signal/BSSID/bitrate every few seconds, pairs each sample with the AMCL pose, and appends CSV — plot it over the map to find dead zones and AP-roam spots. Deliberately standalone (rclpy only) so it can be `scp`'d to and run **on the Pi**, whose radio is the one that matters. |
+| `bump_to_cloud.py` | Turns Create 3 bumper hits into short-lived costmap obstacles on `bump_points`: feet are invisible to the lidar, so after the firmware's bump reflex this is what makes nav2 actually route around whatever it hit instead of retrying the same path. Run on the laptop alongside the nav stack. |
 | `survey_locations.py` | Surveying helper: type a name, click the spot in RViz with 'Publish Point', and it prints a ready-to-paste `locations:` block for the active map's locations file. |
 | `merge_maps.py` | Offline CLI that merges two saved maps into one larger map, given the transform between their frames (see [docs/generate_a_map.md](../docs/generate_a_map.md)). |
 | `location_mapper_eval.py` | Scores the LLM location mapper against a fixed prompt set, including must-abstain cases — run it after changing the model, prompt, or locations; no robot needed. |
 | `llm_location_mapper.py` | Library: prompts a local GGUF LLM to extract a known location from a sentence; also runnable standalone (`location_mapper`) to test the LLM without a robot. |
 | `map_locations.py` | Library: loads the surveyed dock poses and named locations for whatever map the running `map_server` has loaded (`maps/<name>.locations.yaml`). |
 | `startup.py` | Library: the shared dock → undock → localize → wait-for-Nav2 sequence every navigation example starts with. Also restarts the lidar if it didn't come back after undocking. |
+| `monitors.py` | Library: the background monitor nodes the loops spin in daemon threads — `BatteryMonitor` (latest charge percentage) and `ScanWatchdog` (is `/scan` fresh AND time-synced, i.e. is nav2 actually seeing the lidar). |
 | `locations_map.txt` | The fallback name → pose list for the LLM location mapper — used only when no map is active; with a map loaded the names come from its locations file. |
+| `first_floor_locations.txt` | Raw survey notes from the first-floor mapping runs — not loaded by any code. The live poses are in `maps/first_floor.locations.yaml`; this keeps a few landmarks that were never copied over. |
 
 Every node runs as `ros2 run turtlebot4_custom_py <entry point>`. Entry points
 match the file names except `llm_navigation_node.py` → `llm_navigation`,

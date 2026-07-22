@@ -1,46 +1,26 @@
+#!/usr/bin/env python3
+"""Patrol-and-recharge loop with HARDCODED waypoints (robotics_lab map).
+
+The original patrol example, kept as the simplest loop to read: everything is
+in this one file, with the waypoints inline. For real runs use
+nav_patrol_loop instead — it reads waypoints from the active map's locations
+file and adds the goal timeouts, scan watchdog, and dock retries that a long
+unattended run needs.
+"""
 from math import floor
 from threading import Lock, Thread
 from time import sleep
 
 import rclpy
 
-from rclpy.executors import SingleThreadedExecutor
-from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
-
-from sensor_msgs.msg import BatteryState
 from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Directions, TurtleBot4Navigator
 
+from turtlebot4_custom_py.monitors import BatteryMonitor
 from turtlebot4_custom_py.startup import undock_and_localize
 
 BATTERY_HIGH = 0.95
 BATTERY_LOW = 0.30  # when the robot will go charge
 BATTERY_CRITICAL = 0.12  # when the robot will shutdown
-
-
-class BatteryMonitor(Node):
-
-    def __init__(self, lock):
-        super().__init__('battery_monitor')
-
-        self.lock = lock
-
-        # Subscribe to the /battery_state topic (robot publishes at root namespace)
-        self.battery_state_subscriber = self.create_subscription(
-            BatteryState,
-            'battery_state',
-            self.battery_state_callback,
-            qos_profile_sensor_data)
-
-    # Callbacks
-    def battery_state_callback(self, batt_msg: BatteryState):
-        with self.lock:
-            self.battery_percent = batt_msg.percentage
-
-    def thread_function(self):
-        executor = SingleThreadedExecutor()
-        executor.add_node(self)
-        executor.spin()
 
 
 def main(args=None):

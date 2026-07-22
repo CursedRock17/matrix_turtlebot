@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
+"""Patrol loop that accepts natural-language reroutes mid-patrol.
 
+Drives the active map's patrol waypoints like nav_patrol_loop, but between
+waypoints it checks /navigation_command (std_msgs/String): a sentence like
+"take this to Harold's office" is mapped to a surveyed location by the local
+LLM (llm_location_mapper), the robot detours there, then resumes the patrol.
+
+This is the integration rung — prove nav_patrol_loop and llm_navigation
+separately before running this (see README.md). Note it still uses the simple
+blocking startToPose flow; the patrol hardening (goal timeouts, scan
+watchdog, dock retries) lives in nav_patrol_loop and hasn't been folded in
+here yet.
+"""
 import collections
 from math import floor
 from threading import Lock, Thread
@@ -13,7 +25,8 @@ from std_msgs.msg import String
 
 from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Navigator
 
-from turtlebot4_custom_py.nav_patrol_loop import BatteryMonitor
+from turtlebot4_custom_py.bump_to_cloud import BumpToCloud
+from turtlebot4_custom_py.monitors import BatteryMonitor
 from turtlebot4_custom_py.llm_location_mapper import LLMLocationMapper, locations_from_map
 from turtlebot4_custom_py.map_locations import load_map_locations
 from turtlebot4_custom_py.startup import undock_and_localize
@@ -94,6 +107,10 @@ def main(args=None):
     thread = Thread(target=battery_monitor.thread_function, daemon=True)
     thread.start()
 
+    # Bumps -> costmap obstacles + proximity beeps (base-stack safety net).
+    bump_watch = BumpToCloud()
+    Thread(target=bump_watch.thread_function, daemon=True).start()
+
     # Undock first (the docked robot has no lidar), localize, wait for Nav2
     undock_and_localize(navigator)
     print("Running")
@@ -163,6 +180,7 @@ def main(args=None):
 
     patrol_node.destroy_node()
     battery_monitor.destroy_node()
+    bump_watch.destroy_node()
     rclpy.shutdown()
 
 

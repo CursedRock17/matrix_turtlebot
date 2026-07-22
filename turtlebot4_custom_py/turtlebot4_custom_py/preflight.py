@@ -29,7 +29,8 @@ ROBOT_IP = '192.168.50.224'  # RPi on BaleNet; override with -p robot_ip:= if it
 # Recorded to the diagnostic bag generically, so the ones we don't subscribe
 # to live (tf, dock_status, ...) need no message imports here.
 BAG_TOPICS = ['/odom', '/tf', '/tf_static', '/scan', '/dock_status',
-              '/battery_state', '/amcl_pose', '/initialpose', '/diagnostics']
+              '/battery_state', '/amcl_pose', '/initialpose', '/diagnostics',
+              '/hazard_detection']
 
 OK, FAIL, WARN = '[ OK ]', '[FAIL]', '[WARN]'
 
@@ -130,6 +131,24 @@ def main(args=None):
     # scan is off while docked, so its absence alone is not a failure.
     checks.append((OK, f"/scan: {c['/scan']} msgs") if c['/scan'] else
                   (WARN, '/scan: 0 msgs (normal while docked; lidar starts on undock)'))
+    # The rplidar NODE must exist exactly once, docked or not. Zero publishers
+    # means the node died even though turtlebot4.service shows green; two means
+    # a manual rplidar.launch.py is fighting the service's node over the topic
+    # and motor (both seen in the field, 2026-07).
+    scan_pubs = node.count_publishers('scan')
+    if scan_pubs == 1:
+        checks.append((OK, '/scan has exactly 1 publisher (rplidar node alive)'))
+    elif scan_pubs == 0:
+        checks.append((FAIL, '/scan has NO publisher — the rplidar node is not '
+                             'running (service green does not mean the node is '
+                             'alive). On the Pi: ros2 launch turtlebot4_bringup '
+                             'rplidar.launch.py, and check `journalctl -u '
+                             'turtlebot4 -b | grep -i rplidar`'))
+    else:
+        checks.append((FAIL, f'/scan has {scan_pubs} publishers — DUPLICATE rplidar '
+                             'nodes (turtlebot4.service + a manual launch?). They '
+                             'fight over the topic and motor; kill the manual one '
+                             'or `sudo systemctl restart turtlebot4` on the Pi'))
     if node.is_docked is True:
         checks.append((WARN, 'robot is DOCKED — the lidar is off/unreliable until it '
                              'undocks; the node auto-undocks, but for a MANUAL flow send '
@@ -144,7 +163,18 @@ def main(args=None):
                       (WARN, f'odom timestamp delay ~{avg*1000:.0f} ms — check time sync '
                              '(docs/time_sync.md)'))
 
-    healthy = reachable and odom_ok
+    # The nav nodes start bump_to_cloud themselves, and preflight usually runs
+    # BEFORE them — so absence here is normal. This line only matters for
+    # manual RViz-goal sessions, where nothing starts it for you.
+    if node.count_publishers('bump_points') == 0:
+        checks.append((WARN, 'bump_points not publishing yet (normal before a nav '
+                             'node starts — they embed bump_to_cloud). For a MANUAL '
+                             'RViz-goal session, start it yourself: ros2 run '
+                             'turtlebot4_custom_py bump_to_cloud'))
+    else:
+        checks.append((OK, 'bump_to_cloud is publishing bump_points'))
+
+    healthy = reachable and odom_ok and scan_pubs == 1
     print('\n===== TurtleBot4 preflight =====')
     for status, text in checks:
         print(f'  {status} {text}')
