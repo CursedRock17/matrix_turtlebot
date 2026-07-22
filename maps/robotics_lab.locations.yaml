@@ -1,0 +1,28 @@
+# Surveyed poses for maps/robotics_lab.yaml, in its map frame.
+#
+# Every map needs a maps/<name>.locations.yaml like this one — the dock is
+# only at (0, 0) on maps whose SLAM run started on the dock. The nav nodes
+# load this file for whatever map /map_server has active and refuse to start
+# without it, because a wrong undock pose gives AMCL a garbage initial pose.
+#
+# direction is a compass name (north, north_west, west, ... in 45° steps) or
+# yaw in degrees (TurtleBot4 convention: north = 0, west = 90, south = 180,
+# east = 270).
+
+dock:
+  # Where the robot sits after undocking (~0.5 m back off the dock, spun
+  # 180°). Used as the AMCL initial pose — survey this carefully.
+  undock_pose: {x: 2.25, y: -1.10, direction: north}
+  # Where to navigate before calling dock() when returning to charge.
+  approach_pose: {x: -1.0, y: 1.0, direction: east}
+
+# Named places the robot can be sent to. The names will eventually be what
+# the LLM maps natural-language commands onto, so prefer real room/landmark
+# names over generic ones.
+locations:
+  near_dock: {x: 2.25, y: -1.10, direction: north}
+  spot_a: {x: 2.67, y: -1.625, direction: west}
+  spot_b: {x: 2.94, y: -0.05, direction: south}
+
+# The loop nav_patrol_loop drives, in order, by location name.
+patrol: [near_dock, spot_a, spot_b]

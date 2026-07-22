@@ -1,11 +1,16 @@
 bt_navigator:
   ros__parameters:
     enable_stamped_cmd_vel: true
+    # Stock tree that replans only when the path becomes blocked or the goal
+    # changes (IsPathValid is a cheap cell-walk); the default tree re-ran
+    # NavFn over the full 2496x745 first_floor map every second, a constant
+    # CPU tax on the already-saturated laptop (2026-07-10 efficiency pass).
+    default_nav_to_pose_bt_xml: "/opt/ros/jazzy/share/nav2_bt_navigator/behavior_trees/navigate_w_recovery_and_replanning_only_if_path_becomes_invalid.xml"
     global_frame: map
     robot_base_frame: base_link
     odom_topic: odom
     bt_loop_duration: 10
-    default_server_timeout: 20
+    default_server_timeout: 30
     wait_for_service_timeout: 1000
     action_server_result_timeout: 900.0
     navigators: ["navigate_to_pose", "navigate_through_poses"]
@@ -20,7 +25,11 @@ bt_navigator:
 controller_server:
   ros__parameters:
     enable_stamped_cmd_vel: true
-    controller_frequency: 20.0
+    # 10 Hz, not the 20 default: the laptop demonstrably can't hold 20
+    # (2.3-8.3 Hz achieved, 2026-07-02 run) and a missed declared rate just
+    # adds jitter warnings and starves other nodes. At the 0.26 m/s cap,
+    # 10 Hz is still one control cycle per 2.6 cm (2026-07-10 efficiency pass).
+    controller_frequency: 10.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.5
     min_theta_velocity_threshold: 0.001
@@ -39,10 +48,25 @@ controller_server:
       xy_goal_tolerance: 0.25
       yaw_goal_tolerance: 0.25
     FollowPath:
-      plugin: "nav2_mppi_controller::MPPIController"
+      # Spin-then-drive (bench feedback 2026-07-09: "it tries to back up and
+      # get tripped up instead of just spinning"): the shim rotates IN PLACE
+      # toward the path whenever it points >45 deg away, then hands control
+      # to MPPI for the drive; it also rotates in place to the goal heading
+      # at the end. MPPI's own params stay below, unchanged — the shim wraps
+      # it. (The backup-after-a-BUMP is different: that's the Create 3
+      # firmware reflex, always on, not nav2.)
+      plugin: "nav2_rotation_shim_controller::RotationShimController"
+      primary_controller: "nav2_mppi_controller::MPPIController"
+      angular_dist_threshold: 0.785      # rotate in place beyond ~45 deg
+      angular_disengage_threshold: 0.3927
+      forward_sampling_distance: 0.5
+      rotate_to_heading_angular_vel: 1.2
+      max_angular_accel: 3.2
+      simulate_ahead_time: 1.0
+      rotate_to_goal_heading: true
       time_steps: 56
       model_dt: 0.05
-      batch_size: 2000
+      batch_size: 1000  # the documented default; 2000 doubled MPPI's CPU for no recorded reason
       ax_max: 3.0
       ax_min: -3.0
       ay_max: 3.0
@@ -56,11 +80,16 @@ controller_server:
       wz_max: 1.9
       iteration_count: 1
       prune_distance: 1.7
-      transform_tolerance: 0.1
+      # 0.5 s TF margin here and in the costmaps/behaviors/collision_monitor:
+      # odom->base_link crosses Wi-Fi and routinely lags 50-260 ms during AP
+      # roams (2026-07-02 ramp run), which blew the 0.1-0.3 s defaults. At the
+      # smoothed 0.26 m/s cap, 0.5 s of pose staleness is <=13 cm, absorbed by
+      # the inflation layer. Reliability over reaction time.
+      transform_tolerance: 0.5
       temperature: 0.3
       gamma: 0.015
       motion_model: "DiffDrive"
-      visualize: true
+      visualize: false
       regenerate_noises: true
       TrajectoryVisualizer:
         trajectory_step: 5
@@ -95,9 +124,16 @@ controller_server:
         cost_power: 1
         cost_weight: 3.81
         critical_cost: 300.0
-        consider_footprint: true
+        # false = circle checking, matching the costmaps' robot_radius (true
+        # + robot_radius triggers "Inconsistent configuration in collision
+        # checking" at bringup). Also the behavior we WANT with the oversized
+        # radius: inscribed cost (253) now counts as collision, so MPPI treats
+        # the whole 0.28 m bubble as a hard no-go instead of a suggestion —
+        # closes the tracking-error gap that clipped feet — and it's cheaper
+        # per trajectory point on the loaded laptop.
+        consider_footprint: false
         collision_cost: 1000000.0
-        near_goal_distance: 1.0
+        near_goal_distance: 0.75
         trajectory_point_step: 2
       PathAlignCritic:
         enabled: true
@@ -131,23 +167,42 @@ local_costmap:
       publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_link
+      transform_tolerance: 0.5  # Wi-Fi TF lag margin — see FollowPath note
       rolling_window: true
       width: 3
       height: 3
       resolution: 0.06
-      footprint: "[[ 0.189,  0.000],
-                  [ 0.134, -0.134],
-                  [ 0.000, -0.189],
-                  [-0.134, -0.134],
-                  [-0.189,  0.000],
-                  [-0.134,  0.134],
-                  [ 0.000,  0.189],
-                  [ 0.134,  0.134]]"
+      # Deliberately OVERSIZED virtual radius (real shell is ~0.17 m): the
+      # HARD keep-out against ANY lidar return, including a person's legs.
+      # 0.25 is the MAXIMUM the building geometry allows. The binding gap is
+      # NOT the 80 cm doors — it's the REAL POST mid-passage at
+      # (31.9, -2.6) on the crossroads<->corridor route (the only way back
+      # to the dock): the post splits a 1.55 m opening into two ~0.75 m
+      # sub-gaps. Center band = gap - 2*radius:
+      #   radius 0.25 -> 0.25 m band there (and 0.30 m in the 80 cm doors);
+      #   radius 0.30 -> 0.15 m band -> FAILED re-entry live (2026-07-09);
+      #   radius 0.40 -> doors closed, people unpassable, dock stuck.
+      # Passing a person needs 2*radius of free width beside them, and the
+      # undock zone (~0.5-0.6 m off the dock wall) must stay outside the
+      # radius too — 0.25 satisfies all of it.
+      # While DOCKED the center is ~0.2 m from the wall, inside any useful
+      # radius — nav goals from the dock always fail; undock first (the
+      # nodes do). Feet beyond this radius are covered by the VirtualBumper
+      # slowdown ring (0.45), the soft inflation (0.5), and bump_to_cloud
+      # (bumps become costmap obstacles + proximity beeps).
+      # Keep both costmaps identical.
+      robot_radius: 0.25
       plugins: ["static_layer", "voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
+        # SOFT preference only — the ~0.5 m berth the robot gives people
+        # when space allows. Zero cost beyond 0.5 m, so the dock's
+        # undock/approach zone (~0.55-0.6 m off the wall) stays cost-free
+        # (0.85 blanketed it and the robot couldn't leave the dock). The
+        # 80 cm door centerline (0.40 from each frame) costs ~170, below
+        # NavFn lethal 253 / MPPI critical_cost 300.
         cost_scaling_factor: 4.0
-        inflation_radius: 0.45
+        inflation_radius: 0.50
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: true
@@ -157,7 +212,7 @@ local_costmap:
         z_voxels: 16
         max_obstacle_height: 2.0
         mark_threshold: 0
-        observation_sources: scan
+        observation_sources: scan bump_points
         scan:
           topic: scan
           max_obstacle_height: 2.0
@@ -168,6 +223,33 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+        # Bumped obstacles (feet — below the lidar plane) from bump_to_cloud.
+        # Marking only: the lidar sees through the air above a foot, so its
+        # raytrace would clear the mark; the node republishes for ~10 s to
+        # keep it alive, then the points expire on their own.
+        bump_points:
+          topic: bump_points
+          data_type: "PointCloud2"
+          marking: true
+          clearing: false
+          min_obstacle_height: 0.0
+          max_obstacle_height: 2.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+        # OAK-D depth — feet at range (docs/oakd_feet_detection.md). To enable:
+        # uncomment here AND add oakd_points to observation_sources above,
+        # then start the depth->cloud pipeline from that doc.
+        # min_obstacle_height 0.03 drops the floor; keep marking-only so a
+        # sparse low-rate cloud can't raytrace away lidar marks.
+        # oakd_points:
+        #   topic: oakd_points
+        #   data_type: "PointCloud2"
+        #   marking: true
+        #   clearing: false
+        #   min_obstacle_height: 0.03
+        #   max_obstacle_height: 0.5
+        #   obstacle_max_range: 2.0
+        #   obstacle_min_range: 0.3
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: true
@@ -181,23 +263,25 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      footprint: "[[ 0.189,  0.000],
-                  [ 0.134, -0.134],
-                  [ 0.000, -0.189],
-                  [-0.134, -0.134],
-                  [-0.189,  0.000],
-                  [-0.134,  0.134],
-                  [ 0.000,  0.189],
-                  [ 0.134,  0.134]]"
+      # On a docked cold start the map frame only appears after nav_to_node
+      # undocks (lidar back on) and sets the initial pose. The default 60 s
+      # activation timeout fired before that and aborted the whole bringup
+      # (2026-06-10 16:53 run), forcing a second nav2 launch.
+      initial_transform_timeout: 600.0
+      transform_tolerance: 0.5  # Wi-Fi TF lag margin — see FollowPath note
+      # Oversized virtual radius — sizing rationale at the local_costmap
+      # robot_radius; keep the two identical.
+      robot_radius: 0.25
       resolution: 0.06
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
-        observation_sources: scan
+        observation_sources: scan bump_points
         scan:
           topic: scan
+          min_obstacle_height: 0.0
           max_obstacle_height: 2.0
           clearing: true
           marking: true
@@ -206,13 +290,24 @@ global_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+        # Bumped obstacles (feet) — see the local costmap's bump_points note.
+        bump_points:
+          topic: bump_points
+          data_type: "PointCloud2"
+          marking: true
+          clearing: false
+          min_obstacle_height: 0.0
+          max_obstacle_height: 2.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: true
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
+        # Match the local costmap's soft layer — rationale there.
         cost_scaling_factor: 4.0
-        inflation_radius: 0.45
+        inflation_radius: 0.50
       always_send_full_costmap: true
 
 planner_server:
@@ -258,7 +353,7 @@ behavior_server:
     global_frame: map
     local_frame: odom
     robot_base_frame: base_link
-    transform_tolerance: 0.1
+    transform_tolerance: 0.5  # Wi-Fi TF lag margin — see FollowPath note
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4
@@ -299,13 +394,35 @@ collision_monitor:
     cmd_vel_in_topic: "cmd_vel_smoothed"
     cmd_vel_out_topic: "cmd_vel"
     state_topic: "collision_monitor_state"
-    transform_tolerance: 0.2
-    source_timeout: 1.0
+    # Wi-Fi TF lag margin (see FollowPath note): the 0.2/1.0 defaults made the
+    # monitor stop the robot ("invalid source") on every 100-260 ms AP-roam
+    # stall. 1.5 s still stops well before the patrol loop's 2 s stale-scan
+    # line, and the stop remains the SAFE direction on a real outage.
+    transform_tolerance: 0.5
+    source_timeout: 1.5
     base_shift_correction: True
     stop_pub_timeout: 2.0
     # Polygons represent zone around the robot for "stop", "slowdown" and "limit" action types,
     # and robot footprint for "approach" action type.
-    polygons: ["FootprintApproach"]
+    polygons: ["VirtualBumper", "FootprintApproach"]
+    # Reactive feet guard (2026-07-09). The planner's keep-out (oversized
+    # footprint) only protects feet if MPPI tracks the path perfectly, and the
+    # approach check only fires on a head-on collision course — lateral passes
+    # still clipped feet (field: robot shell passed ~0.10 m from feet, and a
+    # foot sticks ~0.05 m past the leg the lidar sees). This ring slows the
+    # robot to 30% whenever ANY raw scan point (a leg, a wall) is within
+    # 0.40 m of base_link — so close passes happen at ~0.08 m/s where a foot
+    # contact is a nudge, not a hit. Deliberately a SLOWDOWN, not a stop: a
+    # stop ring wedges against static walls/doorframes (80 cm door frames sit
+    # right at ~0.40 from a centered robot), a slowdown just crawls through.
+    VirtualBumper:
+      type: "circle"
+      radius: 0.45
+      action_type: "slowdown"
+      slowdown_ratio: 0.3
+      min_points: 4
+      visualize: True
+      enabled: True
     FootprintApproach:
       type: "polygon"
       action_type: "approach"

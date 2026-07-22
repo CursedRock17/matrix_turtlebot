@@ -1,0 +1,7 @@
+image: mini_paa.pgm
+mode: trinary
+resolution: 0.050
+origin: [-10.382, -9.374, 0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

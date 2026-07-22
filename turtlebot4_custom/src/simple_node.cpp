@@ -14,16 +14,17 @@ public:
   TurtleBot4FirstNode()
   : Node("turtlebot4_first_cpp_node"), lights_on_(false)
   {
-    // Subscribe to the /interface_buttons topic
+    // Subscribe to the interface_buttons topic (relative, so a namespaced
+    // run reaches that robot's Create 3)
     interface_buttons_subscriber_ =
       this->create_subscription<irobot_create_msgs::msg::InterfaceButtons>(
-      "/interface_buttons",
+      "interface_buttons",
       rclcpp::SensorDataQoS(),
       std::bind(&TurtleBot4FirstNode::interface_buttons_callback, this, std::placeholders::_1));
 
-    // Create a publisher for the /cmd_lightring topic
+    // Create a publisher for the cmd_lightring topic
     lightring_publisher_ = this->create_publisher<irobot_create_msgs::msg::LightringLeds>(
-      "/cmd_lightring",
+      "cmd_lightring",
       rclcpp::SensorDataQoS());
   }
 

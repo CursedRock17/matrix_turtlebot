@@ -4,7 +4,8 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Navigator
 
-from turtlebot4_custom_py.llm_location_mapper import LLMLocationMapper
+from turtlebot4_custom_py.llm_location_mapper import LLMLocationMapper, locations_from_map
+from turtlebot4_custom_py.map_locations import load_map_locations
 
 
 class LLMNavigationNode(Node):
@@ -17,29 +18,36 @@ class LLMNavigationNode(Node):
         super().__init__('llm_navigation_node')
 
         # Declare parameters
-        self.declare_parameter('robot_namespace', '')
         self.declare_parameter('model_path', '')
         self.declare_parameter('command_topic', 'navigation_command')
         self.declare_parameter('n_threads', 4)
 
         # Get parameters
-        robot_namespace = self.get_parameter('robot_namespace').value
         model_path = self.get_parameter('model_path').value or None
         command_topic = self.get_parameter('command_topic').value
         n_threads = self.get_parameter('n_threads').value
 
         self.get_logger().info(f'Initializing LLM Navigation Node')
-        self.get_logger().info(f'Robot namespace: {robot_namespace}')
         self.get_logger().info(f'Model path: {model_path or "default"}')
 
-        # Initialize the TurtleBot4 navigator
+        # Initialize the TurtleBot4 navigator. For a namespaced robot run
+        # with --ros-args -r __ns:=/<robot>, which namespaces this node, the
+        # navigator, and the command topic together (a robot_namespace
+        # parameter would only move the navigator, not this node's topics).
         self.get_logger().info('Initializing TurtleBot4 Navigator...')
-        self.navigator = TurtleBot4Navigator(namespace=robot_namespace)
+        self.navigator = TurtleBot4Navigator()
+
+        # The LLM picks from the active map's surveyed location names, so the
+        # localization launch (which runs map_server) must already be up —
+        # the same prerequisite navigation itself has.
+        locations = load_map_locations(self.navigator)
+        self.get_logger().info(f'Using locations from map: {locations.map_yaml}')
 
         # Initialize the LLM location mapper
         self.get_logger().info('Initializing LLM Location Mapper...')
         self.llm_mapper = LLMLocationMapper(
             model_path=model_path,
+            locations=locations_from_map(locations),
             n_threads=n_threads,
         )
 

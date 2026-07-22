@@ -1,210 +1,95 @@
 # LLM-Based Navigation for TurtleBot4
 
-This package provides natural language navigation capabilities for the TurtleBot4 using LLAMA3.1 for context mapping.
+Natural-language navigation: publish "Bring Harold this book" on a topic and
+the robot drives to Harold's Room. A small local LLM (Llama-3.2-3B-Instruct,
+4-bit GGUF, run by llama.cpp on the laptop CPU) extracts the destination from
+the command; no internet, no API keys — it works on BaleNet.
 
-## Overview
+## The pieces
 
-The system allows you to send natural language commands like "Bring Harold this book" and the robot will automatically navigate to Harold's Room using the LLAMA3.1 model to extract the location from the command.
+1. **llm_location_mapper.py** — the core library. Builds a prompt listing
+   the known location names, asks the model which one the command means, and
+   fuzzy-matches the answer back to a known name. Answers `UNKNOWN` (and the
+   node refuses to move) when no destination can be inferred.
+2. **llm_navigation_node.py** (`ros2 run turtlebot4_custom_py llm_navigation`)
+   — subscribes to `navigation_command` and navigates to whatever the mapper
+   extracts.
+3. **patrol_with_llm_node.py** (`... patrol_with_llm`) — the patrol loop with
+   LLM rerouting: patrols the map's waypoints, but a command on
+   `navigation_command` diverts it, then the patrol resumes.
+4. **location_mapper_eval.py** (`... location_mapper_eval`) — scores the
+   mapper against a fixed prompt set, including must-abstain cases. Run it on
+   the laptop after changing the model, the prompt, or the location names —
+   no robot needed.
+5. **locations_map.txt** — fallback location list (`Name: x, y, DIRECTION`
+   per line) used only when no map is active (desk testing).
 
-## Files Created
+## Where the locations come from
 
-1. **locations_map.txt** - Configuration file containing location mappings
-   - Format: `Location Name: x, y, DIRECTION`
-   - Example: `Harold's Room: 0.0, 1.0, NORTH`
+When a map is loaded (i.e. the localization launch is running), the nodes
+read the location names from the active map's `maps/<name>.locations.yaml` —
+the same surveyed poses navigation uses — so the LLM can only name places
+that exist on the map it is driving on. `dock` is always available and is
+what charging synonyms ("go recharge", "head home") map to.
 
-2. **llm_location_mapper.py** - Core LLM integration module
-   - Loads and initializes LLAMA3.1 model
-   - Extracts locations from natural language commands
-   - Maps locations to coordinates
+Only the standalone desk test (`location_mapper`, `location_mapper_eval`)
+falls back to `locations_map.txt`.
 
-3. **llm_navigation_node.py** - ROS2 node for navigation
-   - Subscribes to command topic
-   - Uses LLM to extract location
-   - Commands TurtleBot4Navigator to navigate
+## Setup
 
-## Installation
-
-### 1. Install Python Dependencies
-
-On the computer running the LLM (can be separate from the robot):
-
-```bash
-cd /home/cursedrock17/Documents/Electrical/Matrix_Lab/turtlebot4_ws/turtlebot4_custom_py
-pip install -r requirements.txt
-```
-
-### 2. Setup HuggingFace Authentication (for LLAMA3.1)
-
-You need to authenticate with HuggingFace to download LLAMA3.1:
-
-```bash
-# Install huggingface-cli if not already installed
-pip install huggingface-hub
-
-# Login to HuggingFace (you'll need an account and accept Meta's license)
-huggingface-cli login
-```
-
-Then visit: https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct
-- Accept the license agreement for LLAMA3.1
-
-### 3. Build the ROS2 Package
+Needs `llama-cpp-python` and the GGUF weights on the machine running the
+node (our demo laptop has both):
 
 ```bash
-cd /home/cursedrock17/Documents/Electrical/Matrix_Lab/turtlebot4_ws
-colcon build --packages-select turtlebot4_custom_py
-source install/setup.bash
+pip install -r requirements.txt   # llama-cpp-python
+./download_model.sh               # fetches the ~2GB GGUF from HuggingFace
 ```
+
+Run the download once while on a network with internet; it puts
+`Llama-3.2-3B-Instruct-Q4_K_M.gguf` next to `llm_location_mapper.py` in the
+source tree. The model is not git-tracked.
 
 ## Usage
 
-### Running the Navigation Node
+With the robot stack up (see [docs/navigate_to_a_goal.md](../docs/navigate_to_a_goal.md)):
 
 ```bash
-# Source your workspace
-source /home/cursedrock17/Documents/Electrical/Matrix_Lab/turtlebot4_ws/install/setup.bash
-
-# Run the LLM navigation node
 ros2 run turtlebot4_custom_py llm_navigation
 ```
 
-### Sending Commands
-
-From another terminal, publish natural language commands:
+Then from another sourced terminal:
 
 ```bash
-# Example: Navigate to Harold's Room
-ros2 topic pub /navigation_command std_msgs/msg/String "data: 'Bring Harold this book'"
-
-# Example: Navigate to John's Room
-ros2 topic pub /navigation_command std_msgs/msg/String "data: 'Go to John'"
-
-# Example: Return to dock
-ros2 topic pub /navigation_command std_msgs/msg/String "data: 'Go back to the charging station'"
+ros2 topic pub --once /navigation_command std_msgs/msg/String "data: 'Bring Harold this book'"
+ros2 topic pub --once /navigation_command std_msgs/msg/String "data: 'Go back to the charging station'"
 ```
 
-### Parameters
+Parameters (both nodes): `model_path` (override the GGUF location),
+`n_threads` (CPU threads for inference, default 4), and for `llm_navigation`
+also `command_topic` (default `navigation_command`).
 
-You can customize the node with parameters:
+For a namespaced robot, namespace the whole node with the standard remap
+(this moves the navigator *and* the command topic together):
 
 ```bash
-ros2 run turtlebot4_custom_py llm_navigation \
-  --ros-args \
-  -p robot_namespace:=/matrix_turtlebot1 \
-  -p model_name:=meta-llama/Meta-Llama-3.1-8B-Instruct \
-  -p command_topic:=navigation_command
+ros2 run turtlebot4_custom_py llm_navigation --ros-args -r __ns:=/matrix_turtlebot1
 ```
 
-## Adding New Locations
-
-Edit `turtlebot4_custom_py/locations_map.txt`:
-
-```
-Harold's Room: 0.0, 1.0, NORTH
-John's Room: -1.0, 3.0, NORTH
-Kitchen: 2.0, -1.5, EAST
-Living Room: 5.0, 3.0, WEST
-dock: 0.0, 0.0, NORTH
-```
-
-Available directions:
-- NORTH, SOUTH, EAST, WEST
-- NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST
-
-## Testing the LLM Mapper Standalone
-
-You can test the LLM location extraction without running the full ROS2 node:
+## Testing without a robot
 
 ```bash
-cd /home/cursedrock17/Documents/Electrical/Matrix_Lab/turtlebot4_ws/turtlebot4_custom_py/turtlebot4_custom_py
-python3 llm_location_mapper.py
+ros2 run turtlebot4_custom_py location_mapper        # a few demo prompts
+ros2 run turtlebot4_custom_py location_mapper_eval   # scored eval, exit code = failures
 ```
 
-This will run a series of test commands and show how the LLM extracts locations.
+Both use `locations_map.txt`, so they run with no map, no robot, and no ROS
+graph — just the model file. The eval's abstain cases are the important
+ones: a wrong-but-confident answer sends a real robot somewhere real.
 
-## System Architecture
+## Adding new locations
 
-```
-┌─────────────────────┐
-│  Natural Language   │
-│     Command         │
-└──────────┬──────────┘
-           │
-           ↓
-┌─────────────────────┐
-│  ROS2 Topic         │
-│ /navigation_command │
-└──────────┬──────────┘
-           │
-           ↓
-┌─────────────────────┐
-│ llm_navigation_node │
-└──────────┬──────────┘
-           │
-           ↓
-┌─────────────────────┐
-│ llm_location_mapper │
-│   (LLAMA3.1)        │
-└──────────┬──────────┘
-           │
-           ↓ (x, y, direction)
-┌─────────────────────┐
-│ TurtleBot4Navigator │
-└─────────────────────┘
-```
-
-## Hardware Requirements
-
-### Recommended Specs for Running LLAMA3.1-8B:
-- **GPU**: NVIDIA GPU with 16GB+ VRAM (recommended)
-  - RTX 3090, RTX 4090, A5000, etc.
-- **RAM**: 32GB+ system RAM
-- **Storage**: 20GB for model weights
-
-### Running on Separate Computer:
-Since you mentioned running on another computer via ROS2, ensure:
-1. Both computers are on the same ROS_DOMAIN_ID
-2. Network connectivity between machines
-3. ROS2 topics are properly forwarded
-
-## Troubleshooting
-
-### Model Download Issues
-- Ensure you're authenticated with HuggingFace
-- Check internet connection
-- Verify you've accepted the LLAMA3.1 license
-
-### Out of Memory
-- Try using quantized versions (4-bit or 8-bit)
-- Reduce batch size or context length
-- Use CPU inference (slower but uses less VRAM)
-
-### Location Not Found
-- Check that location names in commands match those in locations_map.txt
-- The LLM uses fuzzy matching, so exact names aren't required
-- Check node logs for extracted location names
-
-## Example Commands That Work
-
-- "Bring Harold this book" → Harold's Room
-- "Go to John's room" → John's Room
-- "Take this to Harold" → Harold's Room
-- "Navigate to John" → John's Room
-- "Go back to the dock" → dock
-- "Return to charging station" → dock
-
-## Notes
-
-- **No Training Required**: LLAMA3.1 is used for inference only (zero-shot)
-- The model learns from the prompt which includes available locations
-- First run will download ~16GB of model weights
-- Subsequent runs will use cached model from ~/.cache/huggingface/
-
-## Future Enhancements
-
-Potential improvements:
-- Add intent extraction (deliver, patrol, return, etc.)
-- Multi-step navigation with waypoints
-- Voice command integration
-- Object recognition for "bring the book" style commands
-- Dynamic location updates via service calls
+Add them to the active map's `maps/<name>.locations.yaml` (survey with
+`ros2 run turtlebot4_custom_py survey_locations` — see
+[README.md](./README.md)). Prefer real room/person names: the LLM maps
+"take this to Jamison" onto a location literally named after Jamison far
+more reliably than onto `spot_b`.

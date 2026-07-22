@@ -1,11 +1,13 @@
 # Installation Setup Guide
-This mini-guide goes setting up and installing all the necessary software/firmware to get
-the Turtlebot4 platform to work should somebody stumble on this.
+This mini-guide goes over setting up and installing all the necessary software/firmware to get
+the Turtlebot4 platform to work should somebody stumble on this. Everything here happens on
+the robot's Raspberry Pi (or the SD card that goes into it) — the laptop side is covered in
+[raspberry_pi_setup.md](./raspberry_pi_setup.md) and [time_sync.md](./time_sync.md).
 
 You're mainly just following other people's guides, mainly [Clearpath's](https://turtlebot.github.io/turtlebot4-user-manual/setup/basic.html),  but this is useful if you're starting
 from nothing:
 1) Turn the Turtlebot4 off and make sure it's not on the charger, you need to disconnect the top from the base 
-to access the PI, as [shown](https://turtlebot.github.io/turtlebot4-user-manual/setup/basic.html). The SD card slot is on the side opposide of the big ports.
+to access the PI, as [shown](https://turtlebot.github.io/turtlebot4-user-manual/setup/basic.html). The SD card slot is on the side opposite of the big ports.
 If there's already an SD card sticking out, remove it, otherwise move on with a new one.
 2) Acquire a 32/64 GB Micro SD Card, install [Raspberry PI Imager](https://www.raspberrypi.com/software/), insert SD card into your computer.
 3) Select the Raspberry PI 4 option, you want to install Ubuntu on whatever the latest
@@ -36,6 +38,12 @@ grab off your computers `ipconfig` or an app like `Fing`. Sign in with the given
 user/pass which you created when flashing the SD. You then want to run `turtlebot4-setup` and
 configure the network to the network you'll be using. 
 
+For the full RPi configuration (discovery server, domain ID, namespace, time sync) follow
+[raspberry_pi_setup.md](./raspberry_pi_setup.md). Time sync in particular is required —
+see [time_sync.md](./time_sync.md) for why and how, and verify it before the first drive:
+`chronyc sources` on the RPi (want `^*` next to the laptop's IP) and
+`ros2 topic delay /odom` on the laptop (want ~0.01–0.05 s).
+
 
 ## Configuration Settings for each of the Turtlebots
 
@@ -56,3 +64,5 @@ ROS_DOMAIN_ID=5
 ### "PS4" Controller
 MAC Address: A0:5A:5C:E5:66:A1
 
+### Resources
+https://classes.cs.uchicago.edu/archive/2025/fall/20600-1/turtlebot4_assembly_setup.html

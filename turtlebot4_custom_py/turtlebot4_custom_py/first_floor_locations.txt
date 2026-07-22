@@ -1,0 +1,18 @@
+# Raw survey notes from the first-floor mapping runs (map frame of
+# maps/first_floor.yaml). NOT loaded by any code — the poses the nav nodes
+# actually use live in maps/first_floor.locations.yaml (see map_locations.py).
+# Kept because some landmarks here (Great Column, the Project Assembly doors,
+# Building Lobby, the full-precision Secondary Dock fix) were never copied
+# into the sidecar. Format: Name: x, y, DIRECTION.
+
+dock: 0.0, 0.0, NORTH
+Great Column: -1.60, -3.08, NORTH
+Ramp Start: -4.63, 4.92, WEST
+Joe's Office: 15.23, -5.08, EAST
+Harold's Office: 11.44, -5.08, EAST
+Project Assembly Big Door: 0.78, 2.63, NORTH
+Project Assembly Small Door: 27.23, -1.20, NORTH
+Open Lobby: 33.81, -4.96, SOUTH
+Building Lobby (Front): 37.37, 13.54, WEST
+Secondary Dock: 33.64638137817383, -6.831990718841553, NORTH
+
